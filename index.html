@@ -1,7 +1,8 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" content="#0b1222">
 <title>Sabaka سباكة 3D — محاكي شبكات تعليمي مفتوح المصدر</title>
 <link rel="stylesheet" href="style.css">
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.min.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
@@ -41,6 +42,7 @@
     <div id="term" class="hidden">
       <div class="th"><b id="termName"></b><span>CLI — اكتب help</span><button id="termX">✕</button></div>
       <div id="termOut" dir="ltr"></div>
+      <div id="termKeys"><button data-k="tab">Tab</button><button data-k="help">?</button><button data-k="up">↑</button><button data-k="down">↓</button><button data-k="ctrlz">Ctrl+Z</button></div>
       <div class="ti" dir="ltr"><span id="prompt"></span><input id="termIn" autocomplete="off" spellcheck="false"></div>
     </div>
   </section>
@@ -51,5 +53,6 @@
     <div id="log" class="tab hidden"></div>
   </aside>
 </main>
+<nav id="mnav"><button data-m="pal">الأجهزة</button><button data-m="cable">كابل</button><button data-m="insp">الجهاز</button><button data-m="cli">CLI</button><button data-m="chal">التحديات</button><button data-m="more">المزيد</button></nav>
 <script type="module" src="app.js"></script>
 </body></html>
