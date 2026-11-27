@@ -377,5 +377,76 @@ quiz:[
 {q:'ليه الـ loops خطيرة في L2؟',o:['فيه TTL بيخلص','مفيش TTL فالـ frames بتلف للأبد','بتبطّأ الـ DNS','بتغيّر الـ IP'],a:1,e:'Ethernet header ماله TTL فبيحصل broadcast storm.'},
 {q:'المنفذ اللي STP بيقفله اسمه:',o:['Root Port','Designated Port','Blocked/Alternate Port','Native'],a:2,e:'مش مطلوب للـ tree فبيتقفل مؤقتاً.'},
 {q:'بنفعّل PortFast على:',o:['منافذ بين switches','منافذ بتوصّل أجهزة نهائية','الـ Root فقط','Trunks'],a:1,e:'مع BPDU Guard للحماية.'}
+]},
+dhcpdns:{id:'dhcpdns',nav:'DHCP و DNS',ex:'example',
+title:'DHCP و DNS: الجهاز بياخد عنوانه وبيعرف الأسماء إزاي؟',
+sub:'من غير الاتنين دول لازم تكتب IP وgateway بإيدك وتحفظ أرقام المواقع. هنا بنفهم ليه اتعملوا، بيشتغلوا إزاي خطوة بخطوة، وإيه اللي بيبوّظ.',
+sections:[
+{html:`<h2>1) المشكلة: جهاز جديد دخل الشبكة</h2>
+<p>جهاز وصل بالكابل أو بالـ Wi-Fi. عشان يتكلم محتاج أربع حاجات: <b>IP</b> مش مستخدم، <b>mask</b>، <b>Default Gateway</b>، و<b>DNS server</b>. لو 200 جهاز في الشركة، تظبطهم يدوي؟ غلطة واحدة (IP مكرر) وجهازين يقعوا.</p>
+<p>الحل: <b>DHCP (Dynamic Host Configuration Protocol)</b>. سيرفر عنده مجموعة عناوين (<b>pool</b>) بيدّي منها لكل جهاز يطلب، ومعاها الـ mask والـ gateway والـ DNS.</p>
+<p>والمشكلة التانية: إنت بتكتب <code>google.com</code> والشبكة بتفهم أرقام بس. محتاجين "دليل تليفونات": ده <b>DNS</b>.</p>
+<div class="box tip"><b class="t">تشبيه</b>DHCP زي موظف الاستقبال في فندق: بيدّيك رقم أوضتك (IP) ومعاه مفتاح (gateway) ورقم الاستعلامات (DNS). والـ DNS هو دليل الهاتف: بتقوله الاسم وهو يقولك الرقم.</div>`},
+{html:`<h2>2) DHCP: الأربع خطوات DORA</h2>
+<p>الجهاز لسه معندوش IP، فمينفعش يبعت unicast لحد. وميعرفش عنوان السيرفر أصلاً. يبقى الحل <b>broadcast</b>. اتفرج على الخطوات:</p>
+<ol>
+<li><b>Discover:</b> الجهاز يصرخ للكل: "في DHCP server؟". Src IP = <code>0.0.0.0</code>، Dst IP = <code>255.255.255.255</code>، Dst MAC = <code>FF:FF:FF:FF:FF:FF</code>. (UDP: من بورت 68 لبورت 67).</li>
+<li><b>Offer:</b> السيرفر يرد: "اعرض عليك 192.168.1.100/24، gateway 192.168.1.1، DNS 192.168.1.5، لمدة 8 ساعات".</li>
+<li><b>Request:</b> الجهاز يقبل العرض ويبعت broadcast تاني: "أنا واخد 192.168.1.100 من السيرفر ده". بيبقى broadcast عشان لو في أكتر من سيرفر عرض، الباقي يعرف إنه اترفض.</li>
+<li><b>Acknowledge:</b> السيرفر يأكد ويسجّل الـ lease. الجهاز يستخدم الإعدادات.</li></ol>
+<p>جرّب بنفسك، وغيّر بين DHCP و DNS من الأزرار:</p>`,widget:'dora'},
+{html:`<h2>3) الـ Lease والـ Options</h2>
+<ul>
+<li><b>Lease:</b> العنوان إيجار مش ملك. بعد <b>50%</b> من المدة الجهاز يحاول يجدد (T1) من نفس السيرفر، وبعد <b>87.5%</b> (T2) يسأل أي سيرفر. لو الإيجار خلص من غير تجديد، يرجع العنوان للـ pool.</li>
+<li><b>Options:</b> معلومات إضافية في الرد: رقم 3 = default gateway، رقم 6 = DNS servers، رقم 15 = domain name، رقم 51 = lease time.</li>
+<li><b>Reservation:</b> السيرفر يدّي نفس الـ IP دايماً لنفس الـ MAC (مفيد للطابعات).</li></ul>
+<p><b>مثال حسابي:</b> pool من 192.168.1.100 لـ 192.168.1.119 يعني 20 عنوان. لو الـ lease ساعتين وعندك 25 جهاز بيدخلوا ويخرجوا، الـ 21 هيفضل مستني لغاية ما حد يخلّص الإيجار. لذلك الـ pool لازم يكون أكبر من عدد الأجهزة.</p>
+<h3>Relay (ip helper-address)</h3>
+<p>الـ Discover broadcast، والـ Router مبيعدّيش broadcast. لو السيرفر في VLAN تانية؟ بنكتب على interface الـ Router اللي فيه الأجهزة:</p>
+<pre>Router(config-if)# ip helper-address 10.0.0.5</pre>
+<p>الـ Router يستلم الـ broadcast ويحوله <b>unicast</b> للسيرفر، ويرجّع الرد. كده سيرفر واحد يخدم VLANs كتير. (الـ relay ده بيحط في الرسالة عنوان الـ interface الخاص بيه عشان السيرفر يعرف يختار الـ pool المناسب.)</p>
+<div class="box err"><b class="t">APIPA: 169.254.x.x</b>لو الجهاز Windows ملقاش DHCP server، بيدّي نفسه عنوان من <code>169.254.0.0/16</code>. لو شفت العنوان ده في ipconfig يبقى DHCP مش شغال أو مش واصل له، مش إن الشبكة "تمام".</div>
+<p><b>DHCP Snooping (أمان):</b> أي حد يشغّل سيرفر DHCP مزيف (Rogue) هيدّي الناس gateway بتاعه ويتجسس. على الـ Switch بنعرّف المنفذ المتجه للسيرفر الحقيقي <b>trusted</b> والباقي لا، وأي Offer جاي من منفذ غير trusted يتم تجاهله.</p>`},
+{html:`<h2>4) DNS: دليل الأسماء</h2>
+<p>الأسماء هرمية، بتتقرا من اليمين: <code>www.example.com.</code> فيه نقطة مخفية في الآخر هي الـ <b>root</b>.</p>
+<ul>
+<li><b>Root servers:</b> مبيعرفوش الموقع، لكن بيعرفوا مين مسؤول عن <code>.com</code> و<code>.eg</code> و<code>.org</code>.</li>
+<li><b>TLD servers:</b> بيعرفوا مين مسؤول عن <code>example.com</code>.</li>
+<li><b>Authoritative server:</b> صاحب الاسم، عنده الإجابة النهائية (الـ IP).</li></ul>
+<h3>Recursive مقابل Iterative</h3>
+<p>جهازك بيسأل الـ <b>recursive resolver</b> (غالباً بتاع الـ ISP أو 8.8.8.8 أو الراوتر) سؤال واحد وبيستنى الإجابة النهائية. الـ resolver هو اللي بيلف: يسأل الـ root، فيقوله "اسأل TLD"، يسأل الـ TLD، فيقوله "اسأل الـ authoritative"، يسأله ويجيب الـ IP (ده الـ <b>iterative</b> بين الـ resolver والسيرفرات) ويرجّعه لجهازك.</p>
+<h3>الـ Cache والـ TTL</h3>
+<p>كل إجابة معاها <b>TTL</b> بالثواني. الـ resolver والجهاز بيحتفظوا بالإجابة طول المدة دي. مثال: TTL = 300 يعني أي حد يسأل في خلال 5 دقايق ياخد الإجابة فوراً. لو هتغيّر IP موقعك، قلّل الـ TTL قبلها بيوم، وإلا ناس كتير هتفضل تروح للعنوان القديم.</p>
+<h3>أنواع الـ Records</h3>
+<ul>
+<li><b>A:</b> اسم ← IPv4. <b>AAAA:</b> اسم ← IPv6.</li>
+<li><b>CNAME:</b> اسم مستعار لاسم تاني (<code>www</code> ← <code>example.com</code>). مينفعش CNAME على الـ root نفسه.</li>
+<li><b>MX:</b> سيرفرات الإيميل للدومين (بأولوية).</li>
+<li><b>NS:</b> السيرفرات المسؤولة عن الدومين.</li>
+<li><b>TXT:</b> نص حر (مثلاً SPF أو إثبات ملكية الدومين).</li>
+<li><b>PTR:</b> عكس: IP ← اسم.</li></ul>
+<p>DNS بيستخدم UDP بورت 53 عادةً، و TCP 53 للردود الكبيرة ونقل الـ zones.</p>`},
+{html:`<h2>5) ربطهم في المحاكي</h2>
+<div class="box sim"><b class="t">في المحاكي</b>اضغط "مثال" وافتح السيرفر. الأوامر الحقيقية الموجودة:
+<ul><li>على السيرفر: <code>dhcp-server 192.168.1.100 20 192.168.1.1 192.168.1.5</code> (أول IP، عدد العناوين، gateway، DNS)</li>
+<li>على السيرفر: <code>dns-add lab.local 192.168.1.20</code></li>
+<li>على أي PC: <code>dhcp</code> يطلب عنوان، <code>ipconfig</code> يعرض الإعدادات، <code>ip dns &lt;ip&gt;</code> يظبط DNS يدوي، <code>nslookup lab.local</code>، <code>ping lab.local</code>.</li></ul>
+الـ packets بتتحرك على الكابلات: لقطات الـ DHCP والـ DNS لونها مختلف عن ICMP. المحاكي بيعمل الـ DHCP في خطوة واحدة (من غير lease timers ولا relay).</div>
+<h3>أخطاء شائعة</h3>
+<div class="box err"><ul>
+<li><b>ping بالـ IP شغال وبالاسم لأ:</b> المشكلة DNS مش الشبكة. افحص <code>ipconfig</code> وشوف الـ DNS server.</li>
+<li><b>الـ DHCP server في VLAN تانية من غير helper-address:</b> الجهاز مش هياخد IP.</li>
+<li><b>الـ pool يتداخل مع عناوين ثابتة (الـ gateway مثلاً):</b> IP conflict. استثنِ العناوين الثابتة من الـ pool.</li>
+<li><b>DNS cache قديم:</b> غيّرت الـ record والجهاز لسه بيروح للقديم. استنى الـ TTL أو امسح الـ cache (<code>ipconfig /flushdns</code> على Windows).</li>
+<li><b>عنوان 169.254:</b> مفيش DHCP وصل له.</li></ul></div>
+<p>اتأكد من فهمك بالـ try-it والكويز اللي تحت.</p>`}
+],
+tryText:'اضغط "مثال". على السيرفر اظبط DHCP و DNS بالأوامر اللي فوق. على PC1 اكتب dhcp وبعدين ipconfig وشوف الـ IP والـ gateway والـ DNS. بعدين dns-add لاسم جديد وجرّب nslookup و ping بالاسم. وجرّب تمسح الـ DNS من PC (ip dns بـ IP غلط) وشوف ping بالاسم بيفشل وبالـ IP بيشتغل.',
+quiz:[
+{q:'ترتيب خطوات DHCP:',o:['Discover, Offer, Request, Ack','Request, Offer, Discover, Ack','Offer, Discover, Ack, Request','Discover, Request, Offer, Ack'],a:0,e:'DORA.'},
+{q:'ليه Discover بيتبعت broadcast؟',o:['عشان أسرع','الجهاز لسه معندوش IP ومش عارف السيرفر','عشان الأمان','بروتوكول TCP'],a:1,e:'Src 0.0.0.0 و Dst 255.255.255.255.'},
+{q:'الأمر اللي بيخلي Router يحوّل DHCP لسيرفر في شبكة تانية:',o:['ip route','ip helper-address','ip nat','ip dhcp relay off'],a:1,e:'بيحوّل الـ broadcast لـ unicast.'},
+{q:'جهاز Windows IP بتاعه 169.254.7.9 معناه:',o:['كله تمام','ملقاش DHCP server','الـ DNS واقع','بيستخدم NAT'],a:1,e:'APIPA.'},
+{q:'الـ ping بالـ IP شغال وبالاسم لأ. الأرجح:',o:['كابل بايظ','VLAN غلط','مشكلة DNS','STP'],a:2,e:'الشبكة سليمة، الاسم مش بيتحل.'}
 ]}
 };
