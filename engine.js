@@ -68,7 +68,7 @@ export class Net {
     walk(src,iface,vlan,[src.id],[]); this._stp=null; return out;
   }
   // نقط دخول الـ vlan: لما host يتوصل بـ access port الـ vlan هي vlan البورت
-  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up}); } else o.push(i); } return o; }
+  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up,aclIn:sb.aclIn,aclOut:sb.aclOut,subRef:sb}); } else o.push(i); } return o; }
   epIf(r){ const i=r.iface; if(i.subs&&i.subs.length){ return this.l3(r.dev).find(x=>x.phys===i&&x.vlan===r.vlan)||null; } return i; }
   owner(ip){ for(const d of this.devices) for(const i of this.l3(d)) if(i.ip===ip) return {d,i}; return null; }
   arpResolve(d,out,nh,steps){
@@ -81,6 +81,10 @@ export class Net {
     const hm=this.epIf(hit); d.arp[key]=hm.mac; hit.dev.arp[hm.name+'|'+(out.ip)]=out.mac; this.learn(reach,out,hit,hm); return hm.mac;
   }
   learn(reach,out,hit,hm){ for(const r of reach) for(const v of (r.via||[])) v.dev.mac[out.mac]={port:v.in,vlan:v.vlan}; for(const v of (hit.via||[])) v.dev.mac[hm.mac]={port:v.out,vlan:v.vlan}; }
+  // ACL: standard/extended، numbered/named، implicit deny، hit counters
+  aclMatchAddr(s,ip){ if(!s||s.any) return true; if(!ip) return false; return (((ip2n(ip)^ip2n(s.ip))>>>0)&(~ip2n(s.wc)>>>0))===0; }
+  aclEval(acl,sip,dip,proto){ for(const r of acl.rules){ let m=this.aclMatchAddr(r.src,sip); if(m&&acl.type==='extended'){ m=(r.proto==='ip'||r.proto===proto)&&this.aclMatchAddr(r.dst,dip)&&(r.port==null||r.port===(arguments[4]||null)); } if(m){ r.hits=(r.hits||0)+1; return {permit:r.act==='permit',rule:r}; } } return {permit:false,rule:null}; }
+  aclDeny(d,i,dir,sip,dip,proto,port){ const id=i[dir==='in'?'aclIn':'aclOut']; if(!id) return null; const acl=(d.acls||{})[id]; if(!acl) return null; const r=this.aclEval(acl,sip,dip,proto,port); return r.permit?null:{id,iface:i,dir}; }
   // RIP v2 (distance-vector، hop count، max 15، split horizon) — بيتحسب من الـ topology الحالية
   ripNets(d){ const r=d.rip; if(!r||!r.on) return []; const cl=ip=>{ const f=+ip.split('.')[0]; return n2ip(netOf(ip,f<128?'255.0.0.0':f<192?'255.255.0.0':'255.255.255.0')); };
     return this.l3(d).filter(i=>i.ip&&i.mask&&i.up&&i.link&&(r.networks||[]).some(n=>n===cl(i.ip)||n===n2ip(netOf(i.ip,i.mask)))); }
@@ -106,10 +110,11 @@ export class Net {
     const srcIf=()=>src.ifaces.find(i=>i.ip);
     if(!this.l3(src).some(i=>i.ip&&i.link)) return {ok:false,reason:'مفيش IP متظبط أو كابل',steps,hops};
     const own=this.owner(dstIp); if(own&&own.d===src) return {ok:true,hops:[src],steps,dst:src};
-    let t=ttl;
+    let t=ttl; let sip=null; const proto=(kind==='icmp'||kind==='reply')?'icmp':'udp'; const dport=kind==='dns'?53:null;
     for(let guard=0;guard<32;guard++){
-      const r=this.route(cur,dstIp);
+      const r=this.route(cur,dstIp); if(sip===null&&r) sip=r.out.ip;
       if(!r) return {ok:false,reason:cur===src?'مفيش route / default gateway للوجهة دي':'Destination unreachable من '+cur.name,steps,hops,at:cur,type:'unreach'};
+      if(cur!==src&&cur.type==='router'){ const dn=this.aclDeny(cur,r.out,'out',sip,dstIp,proto,dport); if(dn) return {ok:false,reason:'مقفول بـ ACL '+dn.id+' (out) على '+cur.name,steps,hops,at:cur,type:'unreach',acl:dn}; }
       const mac=this.arpResolve(cur,r.out,r.nh,steps);
       if(!mac) return {ok:false,reason:'ARP فشل: مفيش حد رد على '+r.nh,steps,hops,at:cur,type:'arp'};
       const reach=this.l2reach(cur,r.out.phys||r.out,r.out.vlan??null);
@@ -117,6 +122,7 @@ export class Net {
       if(!hit) return {ok:false,reason:'الفريم متوصلش (VLAN مختلفة أو كابل)',steps,hops,at:cur,type:'l2'};
       steps.push({kind,path:hit.path,label});
       hops.push(hit.dev); const nd=hit.dev;
+      if(nd.type==='router'){ const ii=this.epIf(hit); if(ii){ const dn=this.aclDeny(nd,ii,'in',sip,dstIp,proto,dport); if(dn) return {ok:false,reason:'مقفول بـ ACL '+dn.id+' (in) على '+nd.name,steps,hops,at:nd,type:'unreach',acl:dn}; } }
       if(this.l3(nd).some(i=>i.ip===dstIp)) return {ok:true,hops,steps,dst:nd};
       if(nd.type!=='router') return {ok:false,reason:nd.name+' استقبل الباكت بس مش ليه',steps,hops,at:nd,type:'drop'};
       t--; if(t<=0) return {ok:false,reason:'TTL expired عند '+nd.name,steps,hops,at:nd,type:'ttl'};
