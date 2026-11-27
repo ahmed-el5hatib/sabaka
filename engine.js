@@ -68,7 +68,7 @@ export class Net {
     walk(src,iface,vlan,[src.id],[]); this._stp=null; return out;
   }
   // نقط دخول الـ vlan: لما host يتوصل بـ access port الـ vlan هي vlan البورت
-  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up,aclIn:sb.aclIn,aclOut:sb.aclOut,natSide:sb.natSide,subRef:sb}); } else o.push(i); } return o; }
+  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up,aclIn:sb.aclIn,aclOut:sb.aclOut,natSide:sb.natSide,helper:sb.helper,subRef:sb}); } else o.push(i); } return o; }
   epIf(r){ const i=r.iface; if(i.subs&&i.subs.length){ return this.l3(r.dev).find(x=>x.phys===i&&x.vlan===r.vlan)||null; } return i; }
   owner(ip){ for(const d of this.devices) for(const i of this.l3(d)) if(i.ip===ip) return {d,i}; return null; }
   arpResolve(d,out,nh,steps){
@@ -189,13 +189,22 @@ export class Net {
     const reach=this.l2reach(c,ifc);
     const srv=reach.find(r=>r.dev.dhcp&&r.dev.dhcp.on&&r.dev.type==='server');
     reach.forEach(r=>steps.push({kind:'dhcp',path:r.path,label:'DHCP Discover'}));
-    if(!srv) return {ok:false,reason:'مفيش DHCP server في الـ VLAN دي',steps};
-    const s=srv.dev, p=s.dhcp, st=ip2n(p.start); const si=srv.iface;
+    let relay=null;
+    if(!srv){
+      for(const r of reach){ if(r.dev.type!=='router') continue; const ei=this.epIf(r); if(!ei||!ei.helper||!ei.ip) continue;
+        const o=this.owner(ei.helper); if(!o||!o.d.dhcp||!o.d.dhcp.on||o.d.type!=='server') continue;
+        const q=this.send(r.dev,ei.helper,{kind:'dhcp',label:'DHCP relay (unicast)'}); steps.push(...q.steps);
+        if(!q.ok) return {ok:false,reason:'الـ Router عنده helper-address بس مش قادر يوصّل للسيرفر '+ei.helper+': '+q.reason,steps};
+        relay={r,ei,o,back:q.steps}; break; }
+      if(!relay) return {ok:false,reason:'مفيش DHCP server في الـ VLAN دي (ولا ip helper-address على الـ Router)',steps};
+    }
+    const s=relay?relay.o.d:srv.dev, p=s.dhcp, st=ip2n(p.start); const si=relay?{ip:relay.o.i.ip,mask:relay.ei.mask}:srv.iface;
+    if(relay&&((st^ip2n(relay.ei.ip))>>>0&ip2n(relay.ei.mask))!==0) return {ok:false,reason:'الـ pool بتاع السيرفر ('+p.start+') مش في نفس subnet الـ relay interface ('+relay.ei.ip+')',steps};
     if(st===null||!si.ip) return {ok:false,reason:'الـ DHCP server مش متظبط (start IP أو IP للسيرفر)',steps};
     let lease=p.leases[ifc.mac];
     if(!lease){ const used=new Set(Object.values(p.leases)); for(let k=0;k<p.count;k++){ const cand=n2ip(st+k); if(!used.has(cand)&&cand!==si.ip&&!this.owner(cand)){lease=cand;break;} } }
     if(!lease) return {ok:false,reason:'الـ pool خلص',steps};
-    p.leases[ifc.mac]=lease; steps.push({kind:'dhcp',path:[...srv.path].reverse(),label:'DHCP Offer/ACK'});
+    p.leases[ifc.mac]=lease; if(relay){ const rb=this.send(relay.o.d,this.primaryIp(relay.r.dev)||relay.ei.ip,{kind:'dhcp',label:'DHCP Offer (relay)'}); steps.push(...rb.steps); steps.push({kind:'dhcp',path:[...relay.r.path].reverse(),label:'DHCP Offer/ACK'}); } else steps.push({kind:'dhcp',path:[...srv.path].reverse(),label:'DHCP Offer/ACK'});
     ifc.ip=lease; ifc.mask=si.mask; c.gateway=p.gw||''; c.dns=p.dns||''; c.dhcpClient=true; return {ok:true,ip:lease,mask:si.mask,gw:c.gateway,dns:c.dns,steps};
   }
   toJSON(){ return {devices:this.devices,links:this.links,seq:this.seq,cnt:this.cnt,m:this._m}; }
