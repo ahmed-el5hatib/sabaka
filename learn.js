@@ -118,7 +118,17 @@ function vlan(root){
    $('#vO').innerHTML=`<p><b>Broadcast domains:</b> ${bd}</p><table><tr><th>الزوج</th><th>النتيجة</th></tr>${rows}</table>`;};
   draw();
 }
-const WID={calc,topo,chunk,osi,mac,arp,vlan};
+
+function route(root){
+  const R=[['10.0.0.0',8,'via 192.168.1.2'],['10.1.0.0',16,'via 192.168.1.3'],['10.1.5.0',24,'via 192.168.1.4'],['192.168.1.0',24,'connected g0/0'],['0.0.0.0',0,'via 192.168.1.1 (default)']];
+  root.innerHTML='<div class="calc"><div class="row"><label>Destination IP: <input type="text" id="rI" value="10.1.5.9"></label></div><table id="rT"></table><p id="rR"></p></div>';
+  const upd=()=>{const n=ip2n($('#rI').value);if(n===null){$('#rT').innerHTML='';$('#rR').textContent='IP غير صحيح';return;}
+   let best=-1;R.forEach(([a,l],i)=>{if(((n&mask(l))>>>0)===ip2n(a)&&(best<0||l>R[best][1]))best=i;});
+   $('#rT').innerHTML='<tr><th>Route</th><th>Next hop</th><th>يتطابق؟</th></tr>'+R.map(([a,l,v],i)=>{const m=((n&mask(l))>>>0)===ip2n(a);return `<tr style="${i===best?'background:#0e3a2c':''}"><td class="ltr">${a}/${l}</td><td class="ltr">${v}</td><td>${m?(i===best?'✔ الأطول = المختار':'يتطابق'):'لا'}</td></tr>`;}).join('');
+   $('#rR').innerHTML=best<0?'<b>مفيش route:</b> الـ packet بتتمسح (Destination unreachable).':`<b>القرار:</b> الراوتر هيبعتها ${R[best][2]} لأن /${R[best][1]} هي أطول prefix متطابق.`;};
+  $('#rI').oninput=upd;upd();
+}
+const WID={calc,topo,chunk,osi,mac,arp,vlan,route};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
