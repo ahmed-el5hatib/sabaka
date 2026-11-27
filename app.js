@@ -129,7 +129,7 @@ function startNext(){
   if(batchActive<=0) startNext();
 }
 function flash(d){ const g=nodes[d.id]; if(!g) return; g.userData.flash=performance.now(); toast('✖ '+(batches.reason||'الباكت وقع عند '+d.name),true); }
-function fit(){ if(!net.devices.length) return; let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; net.devices.forEach(d=>{x0=Math.min(x0,d.x);x1=Math.max(x1,d.x);z0=Math.min(z0,d.z);z1=Math.max(z1,d.z);}); const cx=(x0+x1)/2,cz=(z0+z1)/2,ext=Math.max(x1-x0,(z1-z0)*1.6,6); resize(); const dist=Math.min(48,(ext*.8/Math.max(.55,camera.aspect*.55)+3)*(camera.aspect<.8?1.35:1)); controls.target.set(cx,0,cz); camera.position.set(cx,dist*.62,cz+dist*.78); }
+function fit(){ if(!net.devices.length) return; let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; net.devices.forEach(d=>{x0=Math.min(x0,d.x);x1=Math.max(x1,d.x);z0=Math.min(z0,d.z);z1=Math.max(z1,d.z);}); const cx=(x0+x1)/2,cz=(z0+z1)/2,ext=Math.max(x1-x0,(z1-z0)*1.6,6); resize(); const dist=Math.min(48,(ext*.8/Math.max(.55,camera.aspect*.55)+3)*(camera.aspect<.8?1.35:1.18)); controls.target.set(cx,0,cz); camera.position.set(cx,dist*.62,cz+dist*.78); }
 let topv=false; $('#bView').onclick=()=>{ topv=!topv; fit(); if(topv){camera.position.y*=1.6;camera.position.z=controls.target.z+1;} };
 
 // ---------- terminal ----------
