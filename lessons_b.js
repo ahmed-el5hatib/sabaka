@@ -212,7 +212,7 @@ R1(config-if)# ip ospf cost 50   ! تغيير الـ cost يدوي</pre>
 <li>الاعتقاد إن أقل hops = أسرع طريق (ده RIP بس).</li>
 <li>تشغيل أكتر من بروتوكول بدون فهم الـ AD: الراوتر هيفضل OSPF (110) على RIP (120).</li>
 <li>Router ID مكرر في OSPF.</li></ul></div>
-<div class="box warn"><b class="t">في المحاكي</b>الـ convergence هنا فوري (مش بنحاكي المؤقتات)، وOSPF بيدعم area واحدة بس حالياً. ده تبسيط للتعليم، مش بيعكس تأخير الشبكات الحقيقية.</div>`}
+<div class="box warn"><b class="t">في المحاكي</b>الـ convergence هنا فوري (مش بنحاكي المؤقتات)، وOSPF بيدعم multi-area (area 0 + areas تانية عن طريق ABR، والـ routes اللي بتعدّي بين الـ areas بتظهر <code>O IA</code> في show ip route). مفيش virtual links ولا stub/NSSA. ده تبسيط للتعليم، مش بيعكس تأخير الشبكات الحقيقية.</div>`}
 ],
 tryText:'اضغط زر OSPF في المحاكي (4 راوترات في مربع). افتح R1 و <code>show ip route</code> وشوف الـ O routes. بعدين على interface اعمل <code>ip ospf cost 100</code> وشوف الطريق اتغير في <code>traceroute</code>. جرّب كمان زر RIP وقارن الجدول (R بدل O).',
 quiz:[
