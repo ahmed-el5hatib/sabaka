@@ -221,5 +221,64 @@ quiz:[
 {q:'OSPF بيحسب الطريق بخوارزمية:',o:['Bellman-Ford','Dijkstra','RSA','CSMA/CD'],a:1,e:'كل راوتر بيشغّل Dijkstra على الـ LSDB.'},
 {q:'لو نفس الشبكة اتعلمت بـ RIP و OSPF، الراوتر هيستخدم:',o:['RIP','OSPF','الاتنين','أي واحد عشوائي'],a:1,e:'AD لـ OSPF = 110 أقل من RIP = 120.'},
 {q:'ليه OSPF أسرع في الـ convergence؟',o:['بيبعت كل 30 ثانية','بيبعت تحديثات عند حدوث تغيير وكل راوتر عنده الخريطة كاملة','بيعتمد على DNS','لأنه بيستخدم hops'],a:1,e:'Triggered updates + LSDB كاملة.'}
+]},
+acl:{id:'acl',nav:'ACL: قوائم التحكم',ex:'acl',
+title:'ACL: التحكم في اللي يعدّي من الراوتر',
+sub:'إزاي تسمح وتمنع ترافيك بقواعد، ترتيب القواعد، الـ wildcard mask، وإيه أماكن التطبيق الصح.',
+sections:[
+{html:`<h2>1) ليه ACL؟</h2>
+<p>الراوتر بشكل افتراضي بيوجّه أي حاجة. لكن في الواقع محتاج: "قسم Sales ما يدخلش على سيرفر الـ HR"، "اسمح بالـ Web بس"، "امنع Telnet". الـ <b>ACL (Access Control List)</b> قائمة قواعد بترتّبها، والراوتر بيفحص بيها كل packet بتعدّي على interface معيّن في اتجاه معيّن (<b>in</b> أو <b>out</b>) وبيقرر: <b>permit</b> (اسمح) أو <b>deny</b> (امنع).</p>
+<p>الـ ACL مفيدة كمان في: تحديد الترافيك لـ NAT، فلترة تحديثات الـ routing، وتصنيف ترافيك QoS.</p>`},
+{html:`<h2>2) قواعد التشغيل (لازم تحفظها)</h2>
+<ol>
+<li><b>Top-down، أول تطابق يكسب:</b> الراوتر بيقرأ القواعد من فوق لتحت، ولما يلاقي قاعدة تتطابق مع الـ packet بينفذها ويوقف. الباقي مش بيتقرأ.</li>
+<li><b>Implicit deny any في الآخر:</b> أي حاجة مفيش قاعدة بتسمح بيها بتتمنع. (قاعدة مخفية في نهاية كل ACL.) يعني ACL فيها deny بس هتمنع كل حاجة!</li>
+<li><b>الترتيب مهم:</b> القواعد الأكثر تحديداً فوق، والعامة تحت.</li>
+<li><b>الـ ACL على interface + اتجاه:</b> in = وهي داخلة للراوتر، out = وهي خارجة منه. ACL واحدة لكل interface لكل اتجاه لكل بروتوكول.</li>
+<li>الراوتر <b>مش بيفلتر الترافيك اللي هو نفسه بيولّده</b> بالـ ACL الـ out.</li></ol>`},
+{html:`<h2>3) الـ Wildcard Mask</h2>
+<p>الـ ACL بتستخدم <b>wildcard mask</b> وهو <b>عكس</b> الـ subnet mask: الـ bit = 0 معناه "لازم يتطابق"، و bit = 1 معناه "مش مهم". أسهل طريقة: wildcard = 255.255.255.255 − mask.</p>
+<table><tr><th>الشبكة</th><th>Mask</th><th>Wildcard</th></tr><tr><td>192.168.1.0/24</td><td class="ltr">255.255.255.0</td><td class="ltr">0.0.0.255</td></tr><tr><td>10.0.0.0/8</td><td class="ltr">255.0.0.0</td><td class="ltr">0.255.255.255</td></tr><tr><td>192.168.1.64/26</td><td class="ltr">255.255.255.192</td><td class="ltr">0.0.0.63</td></tr></table>
+<ul><li><code>host 10.1.1.5</code> = <code>10.1.1.5 0.0.0.0</code> (جهاز واحد).</li><li><code>any</code> = <code>0.0.0.0 255.255.255.255</code> (أي حاجة).</li></ul>`},
+{html:`<h2>4) أنواع الـ ACL</h2>
+<h3>Standard (1–99)</h3><p>بتفلتر على <b>Source IP</b> بس. بسيطة، فبتتحط <b>قريب من الهدف (destination)</b> عشان متمنعش ترافيك زيادة.</p>
+<pre>R1(config)# access-list 10 deny 192.168.1.0 0.0.0.255
+R1(config)# access-list 10 permit any
+R1(config)# interface g0/1
+R1(config-if)# ip access-group 10 out</pre>
+<h3>Extended (100–199)</h3><p>بتفلتر على Source و Destination و البروتوكول (ip, tcp, udp, icmp) و الـ Port. دقيقة، فبتتحط <b>قريب من المصدر (source)</b> عشان الترافيك الممنوع ما يلفّش في الشبكة.</p>
+<pre>R1(config)# access-list 110 deny tcp 192.168.1.0 0.0.0.255 any eq 23
+R1(config)# access-list 110 permit tcp 192.168.1.0 0.0.0.255 any eq 80
+R1(config)# access-list 110 permit icmp any any
+R1(config)# interface g0/0
+R1(config-if)# ip access-group 110 in</pre>
+<h3>Named ACL</h3><p>نفس الفكرة بس بإسم، وأسهل في التعديل:</p>
+<pre>R1(config)# ip access-list extended BLOCK-TELNET
+R1(config-ext-nacl)# deny tcp any any eq 23
+R1(config-ext-nacl)# permit ip any any</pre>
+<h3>جرّب بنفسك</h3>
+<p>دي ACL (110) الأولى فوق. اكتب packet واتفرج الراوتر هيعمل فيها إيه، سطر بسطر:</p>
+<pre>1) deny   tcp 192.168.1.0 0.0.0.255 any eq 23
+2) permit tcp 192.168.1.0 0.0.0.255 any eq 80
+3) permit icmp any any
+   (implicit deny any)</pre>`,widget:'acl'},
+{html:`<h2>5) أخطاء شائعة وتشخيص</h2>
+<div class="box err"><ul>
+<li>نسيان <code>permit any</code> في آخر ACL فيها deny: كل حاجة تانية بتتمنع بسبب implicit deny.</li>
+<li>ترتيب غلط: permit عامة فوق deny محددة: الـ deny عمرها ما هتتنفذ.</li>
+<li>إنشاء ACL ونسيان <code>ip access-group</code>: مش بتعمل حاجة.</li>
+<li>اتجاه غلط (in بدل out) أو interface غلط.</li>
+<li>wildcard غلط (استخدام subnet mask بدل wildcard).</li>
+<li>Standard ACL قريبة من المصدر: بتمنع المصدر من كل الوجهات مش المقصودة بس.</li>
+<li>نسيان ترافيك الرد: ACL بدون state (stateless) فلازم تسمح بالراجع (أو تستخدم established).</li></ul></div>
+<h3>التشخيص</h3><p><code>show access-lists</code> بيعرض كل قاعدة وعدّاد كام packet اتطابقت معاها (matches). بعد ما تعمل ping أو traffic، شوف أنهي سطر زاد عدّاده: ده السطر اللي اتنفّذ.</p>`}
+],
+tryText:'اضغط زر ACL في المحاكي، افتح الراوتر و <code>show access-lists</code>. اعمل ping وجرّب traffic من الأجهزة وراقب العدّاد (matches). بعدين جرّب <code>no ip access-group</code> وشوف الترافيك المحجوب بيعدّي.',
+quiz:[
+{q:'ACL فيها سطر <code>deny</code> واحد بس. النتيجة؟',o:['بتمنع السطر ده بس','بتمنع كل حاجة بسبب implicit deny','بتسمح بكل حاجة','بتتجاهل'],a:1,e:'implicit deny any في آخر كل ACL.'},
+{q:'الـ wildcard لـ 192.168.1.0/24:',o:['255.255.255.0','0.0.0.255','0.0.0.0','255.0.0.0'],a:1,e:'عكس الـ mask.'},
+{q:'Standard ACL بتتحط:',o:['قريب من المصدر','قريب من الهدف','في أي حتة','على الـ Switch'],a:1,e:'لأنها بتفلتر Source بس.'},
+{q:'القواعد بتتقرأ:',o:['من تحت لفوق','عشوائي','من فوق لتحت وأول تطابق ينفّذ','كلها مع بعض'],a:2,e:'ولذلك الترتيب مهم.'},
+{q:'Extended ACL بتفلتر على:',o:['Source IP بس','MAC','Source و Destination و بروتوكول و Port','VLAN'],a:2,e:'ولذلك بتتحط قريب من المصدر.'}
 ]}
 };
