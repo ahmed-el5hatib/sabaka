@@ -331,5 +331,51 @@ quiz:[
 {q:'الكلمة اللي بتفعّل PAT في أمر الـ NAT:',o:['inside','overload','static','pool'],a:1,e:'ip nat inside source list ... overload.'},
 {q:'Inside global هو:',o:['الجهاز الداخلي بعنوانه الخاص','الجهاز الداخلي كما يراه العالم','السيرفر الخارجي','الـ gateway'],a:1,e:'العنوان الـ public اللي بيتترجم له.'},
 {q:'ليه NAT مش بيعتبر Firewall؟',o:['بيمنع كل حاجة','لأنه بيترجم عناوين مش بيطبّق سياسة أمان','لأنه بيشفّر','لأنه L2'],a:1,e:'الإخفاء أثر جانبي، مش حماية حقيقية.'}
+]},
+stp:{id:'stp',nav:'STP: منع الـ Loops',ex:'stp',
+title:'STP: Spanning Tree Protocol ومنع الـ Loops في L2',
+sub:'ليه الـ Redundancy في الـ Switches بيعمل كارثة من غير STP، وإزاي الـ Root Bridge بيتم انتخابه وإيه اللي بيتقفل.',
+sections:[
+{html:`<h2>1) المشكلة: الـ Redundancy بيعمل Loop</h2>
+<p>في شبكة حقيقية بنحط أكتر من لينك بين الـ Switches عشان لو واحد وقع الباقي يشتغل (<b>Redundancy</b>). كويس من ناحية الـ availability. بس الـ Ethernet ما فيهوش TTL! الـ frame ممكن تلف في حلقة للأبد.</p>
+<p>مثال: 3 Switches متوصلين في مثلث، وPC بعت <b>broadcast</b> (ARP مثلاً). SW1 هيعمل Flood له على كل المنافذ، SW2 يستقبله ويعمل Flood، SW3 كمان... وكل واحد بيرجّعه للتاني. النتيجة:</p>
+<ul><li><b>Broadcast Storm:</b> الـ frames بتتضاعف أسياً لحد ما تستهلك كل الـ bandwidth والـ CPU فالشبكة تقع.</li><li><b>MAC table instability:</b> نفس الـ Source MAC بيظهر من منافذ مختلفة، فالـ Switch يغيّر الجدول باستمرار.</li><li><b>Duplicate frames:</b> الجهاز بيستقبل نفس الـ frame أكتر من مرة.</li></ul>
+<div class="box err"><b class="t">دي أكبر كوارث الـ L2</b>شبكات كاملة وقعت بسبب كابل اتوصل غلط. ولهذا الـ STP من أهم الحاجات.</div>`},
+{html:`<h2>2) فكرة الـ STP (IEEE 802.1D)</h2>
+<p><b>Spanning Tree Protocol</b> بيخلّي الـ Switches تتكلم مع بعض وتتفق على <b>شجرة</b> (Tree) من غير loops: بيسيب كل اللينكات متوصلة فعلياً، لكنه <b>بيقفل (Block)</b> منافذ معينة منطقياً بحيث يبقى فيه طريق واحد بس بين أي جهازين. ولو لينك شغّال وقع، بيفتح اللينك الاحتياطي تلقائياً.</p>
+<p>الـ Switches بتتبادل رسايل اسمها <b>BPDU (Bridge Protocol Data Units)</b> كل 2 ثانية. فيها معلومات الـ Bridge ID بتاع اللي بيبعتها والـ root اللي يعرفه.</p>
+<h3>الخطوات الأربعة</h3>
+<ol><li><b>انتخاب Root Bridge</b> واحد للشبكة كلها.</li><li>كل Switch (غير الـ Root) يختار <b>Root Port</b> واحد: أقرب منفذ للـ Root (أقل cost).</li><li>كل segment (لينك) يختار <b>Designated Port</b>: المنفذ الأقرب للـ Root على اللينك ده.</li><li>أي منفذ مش Root ولا Designated بيتقفل <b>(Blocking/Alternate)</b>.</li></ol>`},
+{html:`<h2>3) انتخاب الـ Root Bridge: Bridge ID</h2>
+<p>كل Switch له <b>Bridge ID</b> = <b>Priority</b> (افتراضي 32768، بيزيد بمضاعفات 4096 + رقم الـ VLAN) + <b>MAC address</b>. القاعدة بسيطة: <b>الأقل يكسب</b>. بنقارن الـ Priority الأول، ولو تساووا بنقارن الـ MAC.</p>
+<p>المشكلة: لو سبت الـ defaults، الـ Switch الأقدم (اللي ليه MAC أقل) هيبقى Root، وده ممكن يكون أضعف جهاز في الشبكة! عشان كده بنختار الـ Root بإيدينا بتقليل الـ Priority على جهاز قوي في النص.</p>
+<p>غيّر الأرقام وشوف مين الـ Root:</p>`,widget:'stp'},
+{html:`<h2>4) الـ Cost وأدوار المنافذ</h2>
+<p>الـ <b>Path cost</b> بيعتمد على سرعة اللينك: 10 Mbps = 100، 100 Mbps = 19، 1 Gbps = 4، 10 Gbps = 2 (القيم القديمة). الـ Switch بيجمّع الـ costs لحد الـ Root ويختار أقل مجموع.</p>
+<table><tr><th>الدور</th><th>المعنى</th><th>بيبعت/يستقبل data؟</th></tr>
+<tr><td><b>Root Port</b></td><td>أقرب منفذ للـ Root (واحد في كل non-root switch)</td><td>أيوه</td></tr>
+<tr><td><b>Designated Port</b></td><td>الأقرب للـ Root على الـ segment</td><td>أيوه</td></tr>
+<tr><td><b>Alternate/Blocked</b></td><td>مش مطلوب، بيمنع الـ loop</td><td>لأ (بيسمع BPDUs بس)</td></tr></table>
+<p>كل المنافذ على الـ Root Bridge نفسه بتبقى <b>Designated</b>.</p>
+<h3>مراحل المنفذ (States)</h3>
+<p><b>Blocking</b> (20 ث max age) ← <b>Listening</b> (15 ث) ← <b>Learning</b> (15 ث) ← <b>Forwarding</b>. يعني الـ convergence في STP العادي بياخد 30–50 ثانية، وده ليه RSTP (802.1w) اتعمل: أسرع بكتير (ثواني).</p>
+<div class="box tip"><b class="t">PortFast و BPDU Guard</b>على المنافذ اللي موصلة PC بس، بنفعّل <b>PortFast</b> عشان تروح Forwarding فوراً بدون الانتظار، و<b>BPDU Guard</b> عشان لو حد وصّل Switch على المنفذ ده يتقفل تلقائياً.</div>
+<div class="box sim"><b class="t">في المحاكي</b>اضغط زر STP: 3 switches في مثلث. اكتب <code>show spanning-tree</code> على كل switch وشوف مين الـ Root والمنافذ blocked. وجرّب <code>spanning-tree vlan 1 priority 4096</code> على switch تاني وشوف الـ Root اتغير.</div>`},
+{html:`<h2>5) أخطاء وتشخيص</h2>
+<div class="box err"><ul>
+<li>ترك الـ Root الافتراضي بدون تدخل: ممكن أضعف switch يبقى Root.</li>
+<li>الـ Root bridge على حافة الشبكة بدل النص: ترافيك بيمشي مسافات أطول.</li>
+<li>تعطيل STP "عشان البطء": أسرع طريق لـ broadcast storm.</li>
+<li>الخلط بين STP (L2، منع loops) و routing (L3): الـ L3 عنده TTL فبيتحمّل loops أحسن.</li>
+<li>الاعتقاد إن المنفذ المقفول "عطلان": هو بيتفتح تلقائياً لو الطريق الأساسي وقع.</li></ul></div>
+<h3>خطوات تشخيص</h3><ol><li><code>show spanning-tree</code>: مين الـ Root؟ وأنهي منافذ blocked؟</li><li>الـ blocked port في المكان المتوقع؟ (غالباً على أبعد switch عن الـ Root.)</li><li>بعد ما تفصل لينك: المنفذ المقفول بقى forwarding؟</li></ol>`}
+],
+tryText:'اضغط زر STP في المحاكي. افتح كل Switch و <code>show spanning-tree</code>. حدد مين الـ Root ومنين الـ Blocked. بعدين غيّر priority أحد الـ Switches لـ 4096 وشوف الـ Root الجديد والمنفذ المقفول اتغير. وجرّب تفصل كابل (حذف) وراقب بقى إيه.',
+quiz:[
+{q:'الـ Root Bridge بيتختار بـ:',o:['أعلى Bridge ID','أقل Bridge ID','أسرع switch','أكتر منافذ'],a:1,e:'الأقل يكسب: Priority الأول ثم MAC.'},
+{q:'الـ Priority الافتراضي في STP:',o:['0','4096','32768','65535'],a:2,e:'32768 (بيزيد بمضاعفات 4096).'},
+{q:'ليه الـ loops خطيرة في L2؟',o:['فيه TTL بيخلص','مفيش TTL فالـ frames بتلف للأبد','بتبطّأ الـ DNS','بتغيّر الـ IP'],a:1,e:'Ethernet header ماله TTL فبيحصل broadcast storm.'},
+{q:'المنفذ اللي STP بيقفله اسمه:',o:['Root Port','Designated Port','Blocked/Alternate Port','Native'],a:2,e:'مش مطلوب للـ tree فبيتقفل مؤقتاً.'},
+{q:'بنفعّل PortFast على:',o:['منافذ بين switches','منافذ بتوصّل أجهزة نهائية','الـ Root فقط','Trunks'],a:1,e:'مع BPDU Guard للحماية.'}
 ]}
 };
