@@ -1,4 +1,5 @@
 import {FOUND} from './lessons_a.js';
+import {BASIC} from './lessons_b.js';
 const soon=(id,nav)=>({id,nav,soon:true,title:nav,sub:'',sections:[],quiz:[],ex:'example',tryText:''});
 export const LESSONS=[...FOUND,
 {id:'subnetting',nav:'عناوين IP والـ Subnetting',ex:'example',
@@ -82,4 +83,4 @@ soon('acl','ACL'),
 soon('nat','NAT و PAT'),
 soon('stp','STP'),
 soon('dhcpdns','DHCP و DNS')
-];
+].map(l=>BASIC[l.id]||l);
