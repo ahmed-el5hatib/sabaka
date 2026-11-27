@@ -106,7 +106,19 @@ function arp(root){
    $('#aN').disabled=i===S.length-1;};
   $('#aN').onclick=()=>{if(i<S.length-1){i++;draw();}};$('#aR').onclick=()=>{i=0;draw();};draw();
 }
-const WID={calc,topo,chunk,osi,mac,arp};
+
+function vlan(root){
+  const hosts=['PC1','PC2','PC3','PC4'];const st={PC1:10,PC2:10,PC3:20,PC4:20};
+  root.innerHTML='<div class="calc"><div class="row" id="vH"></div><div id="vO"></div></div>';
+  const col={10:'#37e1ff',20:'#ffa94d',30:'#3ddc97'};
+  const draw=()=>{$('#vH').innerHTML=hosts.map(h=>`<label>${h}: <select data-h="${h}">${[10,20,30].map(v=>`<option value="${v}" ${st[h]===v?'selected':''}>VLAN ${v}</option>`).join('')}</select></label>`).join('');
+   document.querySelectorAll('#vH select').forEach(s=>s.onchange=()=>{st[s.dataset.h]=+s.value;draw();});
+   let rows='';for(let i=0;i<4;i++)for(let j=i+1;j<4;j++){const a=hosts[i],b=hosts[j],ok=st[a]===st[b];rows+=`<tr><td>${a} ↔ ${b}</td><td style="color:${ok?'#3ddc97':'#ff5d73'}">${ok?'يتكلموا مباشرة (L2)':'معزولين: محتاجين Router'}</td></tr>`;}
+   let bd='';[10,20,30].forEach(v=>{const m=hosts.filter(h=>st[h]===v);if(m.length)bd+=`<span style="display:inline-block;margin:4px;padding:6px 12px;border:1px solid ${col[v]};color:${col[v]};border-radius:8px">VLAN ${v}: ${m.join(', ')}</span>`;});
+   $('#vO').innerHTML=`<p><b>Broadcast domains:</b> ${bd}</p><table><tr><th>الزوج</th><th>النتيجة</th></tr>${rows}</table>`;};
+  draw();
+}
+const WID={calc,topo,chunk,osi,mac,arp,vlan};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
