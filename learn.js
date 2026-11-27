@@ -144,7 +144,18 @@ function dv(root){
    $('#dX').innerHTML=`<p><b>RIP:</b> بيختار اللينك المباشر دايماً (1 hop أقل من 3 hops) حتى لو بطيء جداً.</p><p><b>OSPF:</b> المباشر cost ${c} مقابل 10+10+10 = 30 → ${ospfDirect?'بيختار <b>المباشر</b> لأنه أرخص.':tie?'تعادل: ممكن يوزّع الحمل (ECMP).':'بيختار الطريق <b>الأطول (3 hops)</b> لأن مجموعه 30 أقل من '+c+'.'}</p>`;};
   $('#dR').oninput=upd;upd();
 }
-const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv};
+
+function acl(root){
+  const R=[['deny','tcp','192.168.1.0','0.0.0.255','any',null,23],['permit','tcp','192.168.1.0','0.0.0.255','any',null,80],['permit','icmp','any',null,'any',null,null]];
+  root.innerHTML='<div class="calc"><div class="row"><label>Source IP: <input type="text" id="xS" value="192.168.1.5" style="max-width:170px"></label><label>Dest IP: <input type="text" id="xD" value="8.8.8.8" style="max-width:170px"></label></div><div class="row"><label>Protocol: <select id="xP"><option>tcp</option><option>udp</option><option>icmp</option></select></label><label>Dest port: <input type="text" id="xT" value="23" style="max-width:90px"></label></div><table id="xR"></table><p id="xV"></p></div>';
+  const m=(ip,a,w)=>a==='any'||(w===null?ip2n(ip)===ip2n(a):((ip2n(ip)&~ip2n(w))>>>0)===((ip2n(a)&~ip2n(w))>>>0));
+  const upd=()=>{const s=$('#xS').value,d=$('#xD').value,p=$('#xP').value,t=+$('#xT').value;if(ip2n(s)===null||ip2n(d)===null){$('#xV').textContent='IP غير صحيح';return;}
+   let hit=-1;const rows=R.map((r,i)=>{const ok=m(s,r[2],r[3])&&m(d,r[4],r[5])&&r[1]===p&&(r[6]===null||(p!=='icmp'&&r[6]===t));if(ok&&hit<0)hit=i;return [r,ok];});
+   $('#xR').innerHTML='<tr><th>#</th><th>القاعدة</th><th>يتطابق؟</th></tr>'+rows.map(([r,ok],i)=>`<tr style="${i===hit?'background:'+(r[0]==='permit'?'#0e3a2c':'#3a1220'):''}"><td>${i+1}</td><td class="ltr">${r[0]} ${r[1]} ${r[2]}${r[3]?' '+r[3]:''} ${r[4]}${r[6]?' eq '+r[6]:''}</td><td>${i===hit?'✔ أول تطابق':ok?'يتطابق (بس اتجاهل)':'لا'}</td></tr>`).join('')+`<tr style="${hit<0?'background:#3a1220':''}"><td>—</td><td class="ltr">deny any any (implicit)</td><td>${hit<0?'✔ اتنفذت':'لا'}</td></tr>`;
+   const act=hit<0?'deny':R[hit][0];$('#xV').innerHTML=`<b>القرار:</b> <span style="color:${act==='permit'?'#3ddc97':'#ff5d73'}">${act==='permit'?'PERMIT (يعدّي)':'DENY (يتمنع)'}</span>${hit<0?' (بسبب الـ implicit deny)':''}`;};
+  ['xS','xD','xP','xT'].forEach(i=>$('#'+i).oninput=upd);upd();
+}
+const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv,acl};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
