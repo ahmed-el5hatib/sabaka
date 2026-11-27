@@ -107,6 +107,33 @@ function arp(root){
   $('#aN').onclick=()=>{if(i<S.length-1){i++;draw();}};$('#aR').onclick=()=>{i=0;draw();};draw();
 }
 
+function dora(root){
+  root.innerHTML='<div class="calc"><div class="row"><button class="btn2" id="dM1">DHCP (DORA)</button><button class="btn2 ghost" id="dM2">DNS lookup</button></div><svg id="dSv" viewBox="0 0 400 130" style="width:100%;max-width:480px;display:block;margin:auto"></svg><div class="row"><button class="btn2" id="dN">الخطوة التالية</button><button class="btn2 ghost" id="dR">من الأول</button></div><div id="dT"></div></div>';
+  const D=[
+  ['الحالة الابتدائية','الجهاز لسه معندوش IP. مش عارف حاجة عن الشبكة.',null,'-'],
+  ['1) Discover','Src IP 0.0.0.0 | Dst IP 255.255.255.255 | Dst MAC FF:FF:FF:FF:FF:FF. "في DHCP server؟"',[0,1],'-'],
+  ['2) Offer','السيرفر بيعرض: 192.168.1.100/24، gw 192.168.1.1، DNS 192.168.1.5، lease 8 ساعات.',[1,0],'عرض: 192.168.1.100'],
+  ['3) Request','الجهاز يقبل العرض ويبعت broadcast: "أنا واخد 192.168.1.100 من السيرفر ده".',[0,1],'عرض: 192.168.1.100'],
+  ['4) Acknowledge','السيرفر يأكد ويسجّل الـ lease. الجهاز يبدأ يستخدم الإعدادات.',[1,0],'192.168.1.100/24 gw .1 dns .5']];
+  const N=[
+  ['الحالة الابتدائية','المستخدم كتب www.example.com. الـ cache فاضي.',null,'-'],
+  ['1) سؤال للـ resolver','الجهاز يسأل الـ recursive resolver: "IP بتاع www.example.com؟" ويستنى إجابة نهائية.',[0,1],'-'],
+  ['2) الـ resolver يسأل الـ Root','الـ Root يقول: "معرفش، اسأل سيرفرات .com".',[1,0],'-'],
+  ['3) الـ resolver يسأل TLD','سيرفر .com يقول: "اسأل الـ authoritative بتاع example.com".',[1,0],'-'],
+  ['4) الـ resolver يسأل الـ Authoritative','يرد: www.example.com A 93.184.216.34 ، TTL 300. الـ resolver بيحفظها في الـ cache 300 ثانية.',[1,0],'A 93.184.216.34 (TTL 300)'],
+  ['5) الإجابة للجهاز','الـ resolver يرجّع الـ IP للجهاز، والجهاز يحفظه كمان. دلوقتي يفتح الاتصال.',[1,0],'A 93.184.216.34 (TTL 300)']];
+  let m=1,i=0;
+  const draw=()=>{const S=m===1?D:N;const [t,d,ar,c]=S[i];
+   const a=m===1?['PC','DHCP server']:['PC','Resolver'];
+   let s=`<rect x="30" y="45" width="100" height="40" rx="8" fill="#0e1524" stroke="#37e1ff" stroke-width="2"/><text x="80" y="70" fill="#dbe6ff" text-anchor="middle" font-size="13">${a[0]}</text><rect x="270" y="45" width="100" height="40" rx="8" fill="#0e1524" stroke="#3ddc97" stroke-width="2"/><text x="320" y="70" fill="#dbe6ff" text-anchor="middle" font-size="13">${a[1]}</text>`;
+   if(ar){const x1=ar[0]?270:130,x2=ar[0]?130:270;s+=`<line x1="${x1}" y1="65" x2="${x2}" y2="65" stroke="#ffa94d" stroke-width="3"/><circle cx="${x2}" cy="65" r="5" fill="#ffa94d"/>`;}
+   $('#dSv').innerHTML=s;
+   $('#dT').innerHTML=`<h3>${t}</h3><p class="ltr" style="text-align:right">${d}</p><p><b>${m===1?'إعدادات الجهاز':'DNS cache'}:</b> <span class="ltr">${c}</span></p>`;
+   $('#dN').disabled=i===S.length-1;};
+  $('#dN').onclick=()=>{const S=m===1?D:N;if(i<S.length-1){i++;draw();}};$('#dR').onclick=()=>{i=0;draw();};
+  $('#dM1').onclick=()=>{m=1;i=0;draw();};$('#dM2').onclick=()=>{m=2;i=0;draw();};draw();
+}
+
 function vlan(root){
   const hosts=['PC1','PC2','PC3','PC4'];const st={PC1:10,PC2:10,PC3:20,PC4:20};
   root.innerHTML='<div class="calc"><div class="row" id="vH"></div><div id="vO"></div></div>';
@@ -174,7 +201,7 @@ function stp(root){
    $('#sR').innerHTML=`<b>الـ Root:</b> ${S[w][0]}. ${ties>1?'في تعادل في الـ Priority فاتقارن الـ MAC الأقل.':'الـ Priority الأقل كسب من غير ما نحتاج MAC.'}`;};
   draw();
 }
-const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv,acl,nat,stp};
+const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv,acl,nat,stp,dora};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
