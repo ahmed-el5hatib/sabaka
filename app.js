@@ -7,7 +7,7 @@ const isTouch=matchMedia('(pointer:coarse)').matches; const isMobile=()=>matchMe
 const $=s=>document.querySelector(s);
 let net=new Net(), selected=null, tool='select', cableFrom=null, selLink=null;
 const COL={pc:0x37e1ff,switch:0x3ddc97,router:0xffa94d,server:0xa77bff};
-const KCOL={arp:'#ffd24d',icmp:'#37e1ff',reply:'#3ddc97',dhcp:'#ff6fb5',dns:'#b58cff'};
+const KCOL={arp:'#ffd24d',icmp:'#37e1ff',reply:'#3ddc97',dhcp:'#ff6fb5',dns:'#b58cff',tcp:'#ff9f43',tcpr:'#ffc078',rst:'#ff5d73'};
 const hist={}, logs=[];
 
 // ---------- scene ----------
