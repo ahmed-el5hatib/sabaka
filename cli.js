@@ -9,7 +9,7 @@ const expand=str=>{ const o=[]; for(const part of String(str).split(',')){ const
 const findIface=(d,str)=>{ const s=String(str).toLowerCase().replace(/\s/g,''); const m=s.match(/^([a-z]+)(\d+(?:\/\d+)*)(?:\.(\d+))?$/); if(!m) return null; const base=d.ifaces.find(i=>i.name.replace(/^[a-z]+/,'')===m[2]); if(!base) return null; const pre=m[1]; const okp=d.type==='router'?'gigabitethernet'.startsWith(pre)&&pre[0]==='g':'fastethernet'.startsWith(pre)&&pre[0]==='f'; if(!okp) return null; if(m[3]) return {base,sub:m[3]}; return {base}; };
 
 function sess(d){ let s=sessions.get(d.id); if(!s){ s={mode:'user',ifs:[],sub:null,vlan:null,hist:[]}; sessions.set(d.id,s);} return s; }
-export function prompt(d){ const s=sess(d); const h=d.name; return ({user:'>',priv:'#',config:'(config)#','config-if':'(config-if)#','config-subif':'(config-subif)#','config-vlan':'(config-vlan)#','config-router':'(config-router)#','config-if-range':'(config-if-range)#'}[s.mode]===undefined)?h+'>':h+({user:'>',priv:'#',config:'(config)#','config-if':'(config-if)#','config-subif':'(config-subif)#','config-vlan':'(config-vlan)#','config-router':'(config-router)#','config-if-range':'(config-if-range)#'}[s.mode]); }
+export function prompt(d){ const s=sess(d); const h=d.name; return ({user:'>',priv:'#',config:'(config)#','config-if':'(config-if)#','config-subif':'(config-subif)#','config-vlan':'(config-vlan)#','config-router':'(config-router)#','config-std-nacl':'(config-std-nacl)#','config-ext-nacl':'(config-ext-nacl)#','config-if-range':'(config-if-range)#'}[s.mode]===undefined)?h+'>':h+({user:'>',priv:'#',config:'(config)#','config-if':'(config-if)#','config-subif':'(config-subif)#','config-vlan':'(config-vlan)#','config-router':'(config-router)#','config-std-nacl':'(config-std-nacl)#','config-ext-nacl':'(config-ext-nacl)#','config-if-range':'(config-if-range)#'}[s.mode]); }
 export function banner(d){ return [`${d.name} — ${d.type==='router'?'Router':'Switch'} CLI (IOS-style)`,'اكتب ?  للمساعدة، Tab للإكمال، السهم لفوق للأوامر القديمة. ابدأ بـ: enable ثم configure terminal','']; }
 
 // ---------- helpers ----------
@@ -27,15 +27,19 @@ function runningConfig(net,d){ const o=['Building configuration...','','Current 
   for(const i of d.ifaces){ const subs=i.subs||[]; o.push('interface '+FULL(d,i)); if(i.desc) o.push(' description '+i.desc);
     if(d.type==='router'){ if(i.ip) o.push(` ip address ${i.ip} ${i.mask}`); else if(!subs.length) o.push(' no ip address'); }
     else { if(i.mode==='trunk'){ o.push(' switchport mode trunk'); if(i.allowed) o.push(' switchport trunk allowed vlan '+i.allowed); } else { if(i.vlan!==1) o.push(' switchport access vlan '+i.vlan); o.push(' switchport mode access'); } }
+    if(i.aclIn) o.push(' ip access-group '+i.aclIn+' in'); if(i.aclOut) o.push(' ip access-group '+i.aclOut+' out');
     if(!i.up) o.push(' shutdown'); o.push('!');
-    for(const sb of subs){ o.push(`interface ${FULL(d,i)}.${sb.id??sb.vlan}`); if(sb.vlan) o.push(' encapsulation dot1q '+sb.vlan); o.push(` ip address ${sb.ip||'0.0.0.0'} ${sb.mask||''}`.trim(),'!'); } }
+    for(const sb of subs){ o.push(`interface ${FULL(d,i)}.${sb.id??sb.vlan}`); if(sb.vlan) o.push(' encapsulation dot1q '+sb.vlan); o.push(` ip address ${sb.ip||'0.0.0.0'} ${sb.mask||''}`.trim()); if(sb.aclIn) o.push(' ip access-group '+sb.aclIn+' in'); if(sb.aclOut) o.push(' ip access-group '+sb.aclOut+' out'); o.push('!'); } }
   for(const r of d.routes||[]) o.push(`ip route ${r.net} ${r.mask} ${r.nh}`); if(d.routes&&d.routes.length) o.push('!');
+  for(const [id,a] of Object.entries(d.acls||{})){ if(/^\d+$/.test(id)) a.rules.forEach(r=>o.push('access-list '+id+' '+ruleTxt(r))); else { o.push('ip access-list '+a.type+' '+id); a.rules.forEach(r=>o.push(' '+ruleTxt(r))); } o.push('!'); }
   if(d.rip&&d.rip.on){ o.push('router rip',' version '+d.rip.ver); d.rip.networks.forEach(n=>o.push(' network '+n)); (d.rip.passive||[]).forEach(n=>o.push(' passive-interface '+n)); o.push(' no auto-summary','!'); }
   o.push('end'); return o; }
 
 const SHOW=[
  {p:'show ip interface brief',d:'Brief summary of IP status and configuration',h:({net,d,out})=>{ out.push('Interface                  IP-Address      OK? Method Status                Protocol'); const rows=[]; for(const i of d.ifaces){ const [st,pr]=ifStatus(i); if(d.type==='router'){ rows.push([FULL(d,i),i.ip||'unassigned',i.ip?'manual':'unset',st,pr]); for(const sb of i.subs||[]) rows.push([FULL(d,i)+'.'+(sb.id??sb.vlan),sb.ip||'unassigned','manual',st,pr]); } else rows.push([FULL(d,i),'unassigned','unset',st,pr]); } rows.forEach(r=>out.push(r[0].padEnd(26)+' '+r[1].padEnd(15)+' YES '+r[2].padEnd(6)+' '+r[3].padEnd(21)+' '+r[4])); }},
  {p:'show ip route',d:'IP routing table',h:({net,d,out})=>{ if(d.type!=='router'){ out.push('% IP routing is not enabled on this device'); return; } out.push('Codes: C - connected, S - static, R - RIP','','Gateway of last resort is not set','',''); out.pop(); out.pop(); const dflt=(d.routes||[]).find(r=>r.net==='0.0.0.0'); out[out.length-1]=dflt?`Gateway of last resort is ${dflt.nh} to network 0.0.0.0`:'Gateway of last resort is not set'; out.push(''); for(const i of net.l3(d)) if(i.ip&&i.mask&&i.link&&i.up) out.push(`C    ${n2ip(netOf(i.ip,i.mask))}/${maskLen(i.mask)} is directly connected, ${i.phys?FULL(d,i.phys)+'.'+i.name.split('.')[1]:FULL(d,i)}`); for(const r of d.routes||[]) out.push(`S    ${r.net}/${maskLen(r.mask)} [1/0] via ${r.nh}`); if(d.rip&&d.rip.on){ const t=net.ripTable()[d.id]||{}; for(const e of Object.values(t)) if(!e.own) out.push(`R    ${e.net}/${maskLen(e.mask)} [120/${e.metric}] via ${e.nh}, 00:00:12, ${FULL(d,e.out.phys||e.out)}${e.out.phys?'.'+e.out.name.split('.')[1]:''}`); } }},
+ {p:'show access-lists',d:'List access lists',h:({d,out})=>{ const ids=Object.keys(d.acls||{}); if(!ids.length){ return; } for(const id of ids){ const a=d.acls[id]; out.push((a.type==='standard'?'Standard':'Extended')+' IP access list '+id); a.rules.forEach((r,k)=>out.push('    '+((k+1)*10)+' '+ruleTxt(r)+(r.hits?` (${r.hits} matches)`:''))); } }},
+ {p:'show ip access-lists',d:'List IP access lists',h:null},
  {p:'show ip protocols',d:'IP routing protocol process parameters',h:({net,d,out})=>{ if(d.type!=='router'||!d.rip||!d.rip.on){ out.push('*** IP Routing is NSF aware ***'); return; } out.push('Routing Protocol is "rip"','  Sending updates every 30 seconds, next due in 12 seconds','  Default version control: send version '+d.rip.ver+', receive version '+d.rip.ver,'  Maximum hop count is 15','  Routing for Networks:'); d.rip.networks.forEach(n=>out.push('    '+n)); out.push('  Passive Interface(s):'); (d.rip.passive||[]).forEach(n=>out.push('    '+n)); out.push('  Routing Information Sources:','    Gateway         Distance      Last Update'); const nb=new Set(Object.values(net.ripTable()[d.id]||{}).filter(e=>e.nh).map(e=>e.nh)); nb.forEach(g=>out.push('    '+g.padEnd(16)+'120           00:00:12')); }},
 {p:'show spanning-tree',d:'Spanning tree status',h:({net,d,out})=>{ if(d.type!=='switch'){ out.push('% Invalid input: STP exists only on switches'); return; } if(d.stpOn===false){ out.push('Spanning tree disabled'); return; } const s=net.stp(); const r=s.root; const b=net.bid(d), rb=net.bid(r); out.push('VLAN0001','  Spanning tree enabled protocol ieee','  Root ID    Priority    '+rb.p,'             Address     '+rb.m, r===d?'             This bridge is the root':'             Cost        '+s.cost[d.id]+'  (root: '+r.name+')','','  Bridge ID  Priority    '+b.p,'             Address     '+b.m,'','Interface           Role Sts Cost      Prio.Nbr Type','------------------- ---- --- --------- -------- --------'); d.ifaces.forEach((i,k)=>{ const ro=s.roles[d.id+'|'+i.name]; if(!ro) return; out.push(i.name.padEnd(19)+' '+({root:'Root',designated:'Desg',blocked:'Altn'})[ro]+' '+(ro==='blocked'?'BLK':'FWD')+' 4         128.'+(k+1)+'    P2p'); }); }},
   {p:'show vlan brief',d:'VLAN membership summary',h:({d,out})=>{ if(d.type!=='switch'){ out.push('% Invalid input: VLANs exist only on switches'); return; } out.push('VLAN Name                             Status    Ports','---- -------------------------------- --------- -------------------------------'); Object.keys(d.vlans).map(Number).sort((a,b)=>a-b).forEach(v=>{ const ports=d.ifaces.filter(i=>i.mode!=='trunk'&&i.vlan===v).map(i=>SHORT(d,i)).join(', '); out.push(String(v).padEnd(4)+' '+d.vlans[v].padEnd(32)+' active    '+ports); }); }},
@@ -49,7 +53,7 @@ const SHOW=[
  {p:'show running-config',d:'Current operating configuration',h:({net,d,out})=>out.push(...runningConfig(net,d)),priv:true},
  {p:'show version',d:'System hardware and software status',h:({d,out})=>out.push('Sabaka IOS-style Software, Version 1.0',d.name+' uptime is 1 minute','System image file is "sabaka:ios-sim"','Ports: '+d.ifaces.length)},
 ];
-SHOW.find(x=>x.p==='show vlan').h=SHOW.find(x=>x.p==='show vlan brief').h; SHOW.find(x=>x.p==='show ip arp').h=SHOW.find(x=>x.p==='show arp').h;
+SHOW.find(x=>x.p==='show ip access-lists').h=SHOW.find(x=>x.p==='show access-lists').h; SHOW.find(x=>x.p==='show vlan').h=SHOW.find(x=>x.p==='show vlan brief').h; SHOW.find(x=>x.p==='show ip arp').h=SHOW.find(x=>x.p==='show arp').h;
 
 const EXEC=[
  {p:'ping <target>',d:'Send echo messages',h:({net,d,out,res,a})=>{ res.r=pingOut(net,d,a[0],out); res.tag=res.r.ok?'ping-ok':'ping-fail'; res.steps=res.r.steps; }},
@@ -79,6 +83,11 @@ const GLOBAL=[
  {p:'no vlan <id>',d:'Delete a VLAN',h:({d,a})=>{ if(+a[0]!==1&&d.vlans) delete d.vlans[+a[0]]; }},
  {p:'router rip',d:'Enable the RIP routing process',h:({d,s,out})=>{ if(d.type!=='router'){ out.push('% RIP is for routers'); return; } d.rip=d.rip||{on:true,networks:[],passive:[],ver:2}; d.rip.on=true; s.mode='config-router'; }},
  {p:'no router rip',d:'Disable RIP',h:({d,res})=>{ if(d.rip) d.rip.on=false; res.changed=true; }},
+ {p:'access-list <id> <rule...>',d:'Add an access list entry',h:({d,a,out,res})=>{ if(d.type!=='router'){ out.push('% ACLs are supported on routers'); return; } const id=a[0]; if(!/^\d+$/.test(id)){ out.push('% Invalid ACL number'); return; } const n=+id; const type=(n>=1&&n<=99)?'standard':(n>=100&&n<=199)?'extended':null; if(!type){ out.push('% ACL number must be 1-99 (standard) or 100-199 (extended)'); return; } const acl=getAcl(d,id,type); const r=parseRule(acl,a.slice(1),out); if(r){ acl.rules.push(r); res.changed=true; } }},
+ {p:'no access-list <id>',d:'Remove an access list',h:({d,a,res})=>{ if(d.acls) delete d.acls[a[0]]; res.changed=true; }},
+ {p:'ip access-list standard <name>',d:'Named standard access list',h:({d,a,s,out})=>{ if(d.type!=='router'){ out.push('% ACLs are supported on routers'); return; } s.nacl=a[0]; getAcl(d,a[0],'standard'); s.mode='config-std-nacl'; }},
+ {p:'ip access-list extended <name>',d:'Named extended access list',h:({d,a,s,out})=>{ if(d.type!=='router'){ out.push('% ACLs are supported on routers'); return; } s.nacl=a[0]; getAcl(d,a[0],'extended'); s.mode='config-ext-nacl'; }},
+ {p:'no ip access-list <kind> <name>',d:'Remove a named access list',h:({d,a})=>{ if(d.acls) delete d.acls[a[1]]; }},
  {p:'ip default-gateway <ip>',d:'Management default gateway',h:({d,a})=>{ d.gateway=a[0]; }},
  {p:'enable secret <pw>',d:'Set enable secret',h:()=>{}}, {p:'enable password <pw>',d:'Set enable password',h:()=>{}},
  {p:'banner motd <text...>',d:'Message of the day',h:()=>{}}, {p:'ip routing',d:'Enable IP routing',h:()=>{}}, {p:'no ip domain-lookup',d:'Disable DNS lookup',h:()=>{}},
@@ -92,6 +101,8 @@ const GLOBAL=[
 ];
 const IF_ROUTER=[
  {p:'ip address <ip> <mask>',d:'Set the IP address of an interface',h:({net,d,a,s,out,res})=>{ if(ip2n(a[0])===null||maskLen(a[1])===null){ out.push('% Invalid input detected. مثال: ip address 192.168.1.1 255.255.255.0'); return; } const t=s.sub||s.ifs[0]; if(s.sub&&!s.sub.vlan){ out.push('% Configure "encapsulation dot1q <vlan>" first on the subinterface'); return; } const o=net.owner(a[0]); if(o&&o.i!==t&&!(o.i.phys&&o.i.phys===s.ifs[0])){ out.push('% '+a[0]+' is already assigned to '+o.d.name); return; } t.ip=a[0]; t.mask=a[1]; res.tag='ios-ip'; }},
+ {p:'ip access-group <id> <dir>',d:'Specify access control for packets',h:({d,a,s,out,res})=>{ const dir=a[1]; if(dir!=='in'&&dir!=='out'){ out.push('% Invalid input. اكتب in أو out'); return; } if(!(d.acls||{})[a[0]]) out.push('% تحذير: الـ ACL '+a[0]+' لسه مش متعرّفة (هتتطبق لما تتعرّف)'); const t=s.sub?(s.sub.subRef||s.sub):s.ifs[0]; t[dir==='in'?'aclIn':'aclOut']=a[0]; res.changed=true; }},
+ {p:'no ip access-group <id> <dir>',d:'Remove access control from the interface',h:({a,s,res})=>{ const t=s.sub||s.ifs[0]; delete t[a[1]==='in'?'aclIn':'aclOut']; res.changed=true; }},
  {p:'no ip address',d:'Remove the IP address',h:({s})=>{ const t=s.sub||s.ifs[0]; t.ip=''; t.mask=''; }},
  {p:'encapsulation dot1q <vlan>',d:'IEEE 802.1Q Virtual LAN',h:({s,a,out})=>{ if(!s.sub){ out.push('% Encapsulation is configured on subinterfaces only'); return; } if(!(+a[0]>0&&+a[0]<4095)){ out.push('% Invalid VLAN'); return; } s.sub.vlan=+a[0]; s.ifs[0].ip=''; s.ifs[0].mask=''; }},
 ];
@@ -116,6 +127,11 @@ const VLAN_DEFS=[
  {p:'exit',d:'Apply changes and exit',h:({s})=>{ s.mode='config'; }}, {p:'end',d:'Exit to privileged EXEC',h:({s})=>{ s.mode='priv'; }},
 ];
 
+const NACL_DEFS=[
+ {p:'permit <rule...>',d:'Specify packets to forward',h:({d,s,a,out,res,line})=>{ const acl=d.acls[s.nacl]; const r=parseRule(acl,['permit',...a],out); if(r){ acl.rules.push(r); res.changed=true; } }},
+ {p:'deny <rule...>',d:'Specify packets to reject',h:({d,s,a,out,res})=>{ const acl=d.acls[s.nacl]; const r=parseRule(acl,['deny',...a],out); if(r){ acl.rules.push(r); res.changed=true; } }},
+ {p:'exit',d:'Exit from ACL configuration mode',h:({s})=>{ s.mode='config'; }}, {p:'end',d:'Exit to privileged EXEC',h:({s})=>{ s.mode='priv'; }},
+];
 const RIP_DEFS=[
  {p:'version <n>',d:'Set routing protocol version',h:({d,a})=>{ d.rip.ver=+a[0]; }},
  {p:'network <ip>',d:'Enable routing on an IP network',h:({d,a,out})=>{ if(ip2n(a[0])===null){ out.push('% Invalid network address. مثال: network 192.168.1.0'); return; } if(!d.rip.networks.includes(a[0])) d.rip.networks.push(a[0]); }},
@@ -124,12 +140,25 @@ const RIP_DEFS=[
  {p:'passive-interface <name...>',d:'Suppress routing updates on an interface',h:({d,a,out})=>{ const f=findIface(d,a.join('')); if(!f||f.sub){ out.push('% Invalid interface'); return; } const n=f.base.name; if(!d.rip.passive.includes(n)) d.rip.passive.push(n); }},
  {p:'exit',d:'Exit from routing protocol configuration mode',h:({s})=>{ s.mode='config'; }}, {p:'end',d:'Exit to privileged EXEC',h:({s})=>{ s.mode='priv'; }},
 ];
+
+function parseAddr(t,i){ if(t[i]==='any') return {s:{any:true},n:i+1}; if(t[i]==='host'&&ip2n(t[i+1])!==null) return {s:{ip:t[i+1],wc:'0.0.0.0'},n:i+2}; if(ip2n(t[i])!==null){ if(t[i+1]!==undefined&&ip2n(t[i+1])!==null&&/^(0|\d+)\./.test(t[i+1])&&isWild(t[i+1])) return {s:{ip:t[i],wc:t[i+1]},n:i+2}; return {s:{ip:t[i],wc:'0.0.0.0'},n:i+1}; } return null; }
+const isWild=w=>{ const n=ip2n(w); if(n===null) return false; return (((n+1)>>>0)&n)===0; };
+function parseRule(acl,t,out){ const act=t[0]; if(!['permit','deny'].includes(act)){ out.push('% Invalid input detected'); return null; } let i=1; const r={act};
+  if(acl.type==='standard'){ const a=parseAddr(t,i); if(!a||a.n!==t.length){ out.push('% Invalid input. مثال: permit 192.168.1.0 0.0.0.255  أو  deny host 10.0.0.5  أو  permit any'); return null; } r.src=a.s; return r; }
+  const pr=t[i]; if(!['ip','icmp','udp','tcp'].includes(pr)){ out.push('% Invalid protocol. استخدم: ip / icmp / udp / tcp'); return null; } r.proto=pr; i++;
+  const s=parseAddr(t,i); if(!s){ out.push('% Invalid source address'); return null; } r.src=s.s; i=s.n; const d=parseAddr(t,i); if(!d){ out.push('% Invalid destination address'); return null; } r.dst=d.s; i=d.n;
+  if(i<t.length){ if(t[i]==='eq'&&(pr==='udp'||pr==='tcp')){ const p={domain:53,dns:53,www:80,http:80,https:443,telnet:23,ssh:22,ftp:21,smtp:25}[t[i+1]]??+t[i+1]; if(!(p>0)){ out.push('% Invalid port'); return null; } r.port=p; i+=2; } if(i<t.length){ out.push('% Invalid input detected at the end of the rule'); return null; } }
+  return r; }
+const spec=s=>s.any?'any':(s.wc==='0.0.0.0'?'host '+s.ip:s.ip+' '+s.wc);
+const ruleTxt=r=>r.act+(r.proto?' '+r.proto:'')+' '+spec(r.src)+(r.dst?' '+spec(r.dst):'')+(r.port?' eq '+r.port:'');
+const getAcl=(d,id,type)=>{ d.acls=d.acls||{}; if(!d.acls[id]) d.acls[id]={type,rules:[]}; return d.acls[id]; };
 function defsFor(d,s){
   const showDefs=SHOW.filter(x=>s.mode==='priv'||s.mode==='config'||!x.priv);
   if(s.mode==='user') return [...USER_ONLY,...EXEC.filter(x=>/^(ping|traceroute)/.test(x.p)),...showDefs];
   if(s.mode==='priv') return [...PRIV_ONLY,...EXEC,...showDefs];
   if(s.mode==='config') return GLOBAL;
   if(s.mode==='config-if'||s.mode==='config-subif') return [...IF_COMMON,...(d.type==='router'?IF_ROUTER:IF_SWITCH),...GLOBAL.filter(x=>!['exit','end'].includes(x.p))];
+  if(s.mode==='config-std-nacl'||s.mode==='config-ext-nacl') return NACL_DEFS;
   if(s.mode==='config-router') return [...RIP_DEFS,...GLOBAL.filter(x=>!['exit','end','router rip'].includes(x.p))];
   if(s.mode==='config-vlan') return [...VLAN_DEFS,...GLOBAL.filter(x=>!['exit','end'].includes(x.p))];
   return [];
