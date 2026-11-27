@@ -163,7 +163,18 @@ function nat(root){
    $('#nM').textContent=rows.length?`${rows.length} اتصال بيطلعوا كلهم من عنوان public واحد 41.1.1.1 والتمييز بالـ port.`:'';};
   $('#nG').onclick=()=>{rows.push([$('#nH').value+':'+(src++),'41.1.1.1:'+(port++)]);draw();};$('#nR').onclick=()=>{rows=[];port=1024;src=51000;draw();};draw();
 }
-const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv,acl,nat};
+
+function stp(root){
+  const S=[['SW1',32768,'00:1A:00:00:00:01'],['SW2',32768,'00:1A:00:00:00:02'],['SW3',32768,'00:1A:00:00:00:03']];
+  root.innerHTML='<div class="calc"><table id="sT"></table><p id="sR"></p></div>';
+  const draw=()=>{const key=s=>s[1]*1e15+parseInt(s[2].replace(/:/g,''),16);let w=0;S.forEach((s,i)=>{if(key(s)<key(S[w]))w=i;});
+   $('#sT').innerHTML='<tr><th>Switch</th><th>Priority</th><th>MAC</th><th>Bridge ID</th></tr>'+S.map((s,i)=>`<tr style="${i===w?'background:#0e3a2c':''}"><td>${s[0]}${i===w?' (Root)':''}</td><td><select data-i="${i}">${[4096,8192,16384,32768,61440].map(p=>`<option ${p===s[1]?'selected':''}>${p}</option>`).join('')}</select></td><td class="ltr">${s[2]}</td><td class="ltr">${s[1]}.${s[2]}</td></tr>`).join('');
+   document.querySelectorAll('#sT select').forEach(e=>e.onchange=()=>{S[+e.dataset.i][1]=+e.value;draw();});
+   const ties=S.filter(s=>s[1]===S[w][1]).length;
+   $('#sR').innerHTML=`<b>الـ Root:</b> ${S[w][0]}. ${ties>1?'في تعادل في الـ Priority فاتقارن الـ MAC الأقل.':'الـ Priority الأقل كسب من غير ما نحتاج MAC.'}`;};
+  draw();
+}
+const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv,acl,nat,stp};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
