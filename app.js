@@ -339,3 +339,5 @@ try{ const s=localStorage.getItem('sabaka'); net=s?Net.from(JSON.parse(s)):Net.f
 if(!net.devices.length) net=Net.from(example());
 window.__net=()=>net; window.__app={ospfExample,natExample,aclExample,ripExample,stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
 syncScene(); renderInsp(); renderChal(); renderLog(); fit(); frame();
+
+{ const q=new URLSearchParams(location.search).get('ex'); const M={example,vlan:vlanExample,stp:stpExample,rip:ripExample,acl:aclExample,nat:natExample,ospf:ospfExample}; if(q&&M[q]){ loadNet(M[q]()); } }
