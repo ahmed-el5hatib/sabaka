@@ -73,7 +73,22 @@ function osi(root){
   $('#oL').innerHTML=Ls.map(([n,nm],i)=>`<button class="btn2 ghost" data-i="${i}" style="text-align:start;border-right:6px solid ${cols[i]}">${n} &nbsp; ${nm}</button>`).join('');
   $('#oL').onclick=e=>{const b=e.target.closest('button');if(b)pick(+b.dataset.i);};pick(3);
 }
-const WID={calc,topo,chunk,osi};
+
+function mac(root){
+  root.innerHTML='<div class="calc"><div class="row"><label>من: <select id="mS"><option>A</option><option>B</option><option>C</option><option>D</option></select></label><label>إلى: <select id="mD"><option>B</option><option>A</option><option>C</option><option>D</option></select></label><button class="btn2" id="mGo">إرسال</button><button class="btn2 ghost" id="mRs">تصفير الجدول</button></div><svg id="mSv" viewBox="0 0 400 150" style="width:100%;max-width:480px;display:block;margin:6px auto"></svg><table id="mT"></table><div id="mLog" style="min-height:48px"></div></div>';
+  const H={A:'AA:AA',B:'BB:BB',C:'CC:CC',D:'DD:DD'},port={A:1,B:2,C:3,D:4};let tab={};
+  const draw=(to=[],from=null)=>{const xs={A:50,B:150,C:250,D:350};let s='<rect x="40" y="55" width="320" height="34" rx="8" fill="#141d31" stroke="#3ddc97"/><text x="200" y="77" fill="#3ddc97" text-anchor="middle" font-size="14">Switch</text>';
+   for(const k of 'ABCD'){const c=k===from?'#ffa94d':to.includes(k)?'#37e1ff':'#22304d';s+=`<line x1="${xs[k]}" y1="89" x2="${xs[k]}" y2="115" stroke="${c}" stroke-width="3"/><rect x="${xs[k]-22}" y="115" width="44" height="28" rx="6" fill="#0e1524" stroke="${c}" stroke-width="2"/><text x="${xs[k]}" y="134" fill="#dbe6ff" text-anchor="middle" font-size="14">${k}</text><text x="${xs[k]}" y="104" fill="#7e8fb3" font-size="10" text-anchor="middle">P${port[k]}</text>`;}
+   $('#mSv').innerHTML=s;
+   $('#mT').innerHTML='<tr><th>MAC</th><th>Port</th></tr>'+(Object.keys(tab).length?Object.entries(tab).map(([m,p])=>`<tr><td class="ltr">${m}</td><td>${p}</td></tr>`).join(''):'<tr><td colspan=2>(فاضي)</td></tr>');};
+  const go=()=>{const s=$('#mS').value,d=$('#mD').value;if(s===d){$('#mLog').innerHTML='<p>اختار جهازين مختلفين.</p>';return;}
+   let m=[`<p><b>1) Learning:</b> الـ Switch قرأ Source MAC ${H[s]} وسجّله على Port ${port[s]}.</p>`];const known=tab[H[s]]!==undefined;tab[H[s]]=port[s];
+   let to;if(tab[H[d]]!==undefined){to=[d];m.push(`<p><b>2) Forwarding:</b> الـ Destination ${H[d]} موجود في الجدول (Port ${tab[H[d]]}) فبعت الـ frame للجهاز ${d} بس.</p>`);}
+   else{to='ABCD'.split('').filter(x=>x!==s);m.push(`<p><b>2) Flooding:</b> الـ Destination ${H[d]} مش في الجدول، فالـ Switch بعت الـ frame لكل المنافذ ما عدا Port ${port[s]} (الأجهزة ${to.join(', ')}). بس ${d} هو اللي هيرد عليها.</p>`);}
+   $('#mLog').innerHTML=m.join('');draw(to,s);};
+  $('#mGo').onclick=go;$('#mRs').onclick=()=>{tab={};$('#mLog').innerHTML='';draw();};draw();
+}
+const WID={calc,topo,chunk,osi,mac};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
