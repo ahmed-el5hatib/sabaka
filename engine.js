@@ -68,7 +68,7 @@ export class Net {
     walk(src,iface,vlan,[src.id],[]); this._stp=null; return out;
   }
   // نقط دخول الـ vlan: لما host يتوصل بـ access port الـ vlan هي vlan البورت
-  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up,aclIn:sb.aclIn,aclOut:sb.aclOut,subRef:sb}); } else o.push(i); } return o; }
+  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up,aclIn:sb.aclIn,aclOut:sb.aclOut,natSide:sb.natSide,subRef:sb}); } else o.push(i); } return o; }
   epIf(r){ const i=r.iface; if(i.subs&&i.subs.length){ return this.l3(r.dev).find(x=>x.phys===i&&x.vlan===r.vlan)||null; } return i; }
   owner(ip){ for(const d of this.devices) for(const i of this.l3(d)) if(i.ip===ip) return {d,i}; return null; }
   arpResolve(d,out,nh,steps){
@@ -83,8 +83,16 @@ export class Net {
   learn(reach,out,hit,hm){ for(const r of reach) for(const v of (r.via||[])) v.dev.mac[out.mac]={port:v.in,vlan:v.vlan}; for(const v of (hit.via||[])) v.dev.mac[hm.mac]={port:v.out,vlan:v.vlan}; }
   // ACL: standard/extended، numbered/named، implicit deny، hit counters
   aclMatchAddr(s,ip){ if(!s||s.any) return true; if(!ip) return false; return (((ip2n(ip)^ip2n(s.ip))>>>0)&(~ip2n(s.wc)>>>0))===0; }
-  aclEval(acl,sip,dip,proto){ for(const r of acl.rules){ let m=this.aclMatchAddr(r.src,sip); if(m&&acl.type==='extended'){ m=(r.proto==='ip'||r.proto===proto)&&this.aclMatchAddr(r.dst,dip)&&(r.port==null||r.port===(arguments[4]||null)); } if(m){ r.hits=(r.hits||0)+1; return {permit:r.act==='permit',rule:r}; } } return {permit:false,rule:null}; }
+  aclEval(acl,sip,dip,proto){ for(const r of acl.rules){ let m=this.aclMatchAddr(r.src,sip); if(m&&acl.type==='extended'){ m=(r.proto==='ip'||r.proto===proto)&&this.aclMatchAddr(r.dst,dip)&&(r.port==null||r.port===(arguments[4]||null)); } if(m){ if(!this._q) r.hits=(r.hits||0)+1; return {permit:r.act==='permit',rule:r}; } } return {permit:false,rule:null}; }
   aclDeny(d,i,dir,sip,dip,proto,port){ const id=i[dir==='in'?'aclIn':'aclOut']; if(!id) return null; const acl=(d.acls||{})[id]; if(!acl) return null; const r=this.aclEval(acl,sip,dip,proto,port); return r.permit?null:{id,iface:i,dir}; }
+  // NAT: static + PAT (overload). بيترجم الـ source بس عند الخروج من inside لـ outside
+  natTranslate(d,outIf,sip,dip,proto){ const n=d.nat; if(!n) return null;
+    const st=(n.statics||[]).find(s=>s.in===sip); if(st){ this.natLog(d,sip,st.out,proto,dip,'static'); return st.out; }
+    for(const r of (n.rules||[])){ const acl=(d.acls||{})[r.list]; if(!acl) continue; if(!this.aclEval(acl,sip,dip,proto).permit) continue; let pub=null;
+      if(r.ifname){ const oi=this.l3(d).find(x=>x.name===r.ifname||x.name.toLowerCase()===String(r.ifname).toLowerCase()); pub=oi&&oi.ip; } else pub=outIf.ip;
+      if(pub){ this.natLog(d,sip,pub,proto,dip,'PAT'); return pub; } }
+    return null; }
+  natLog(d,inside,outside,proto,dst,kind){ if(this._q) return; const t=d.nat.trans=d.nat.trans||[]; const e=t.find(x=>x.inside===inside&&x.outside===outside&&x.dst===dst&&x.proto===proto); if(e){ e.hits++; return; } t.push({inside,outside,dst,proto,kind,hits:1}); if(t.length>30) t.shift(); }
   // RIP v2 (distance-vector، hop count، max 15، split horizon) — بيتحسب من الـ topology الحالية
   ripNets(d){ const r=d.rip; if(!r||!r.on) return []; const cl=ip=>{ const f=+ip.split('.')[0]; return n2ip(netOf(ip,f<128?'255.0.0.0':f<192?'255.255.0.0':'255.255.255.0')); };
     return this.l3(d).filter(i=>i.ip&&i.mask&&i.up&&i.link&&(r.networks||[]).some(n=>n===cl(i.ip)||n===n2ip(netOf(i.ip,i.mask)))); }
@@ -105,16 +113,17 @@ export class Net {
   }
   ifaceTo(d,nh){ return this.l3(d).find(i=>i.ip&&i.mask&&i.up&&i.link&&same(i.ip,nh,i.mask)); }
   // يرسل IP packet من src الى dstIp. proto: 'icmp'|'udp'. يرجع {ok,reason,hops:[{dev}],steps,at}
-  send(src,dstIp,{ttl=64,kind='icmp',label='ICMP'}={}){
+  send(src,dstIp,{ttl=64,kind='icmp',label='ICMP',nat=null}={}){
     const steps=[]; const hops=[]; let cur=src; let first=true;
     const srcIf=()=>src.ifaces.find(i=>i.ip);
     if(!this.l3(src).some(i=>i.ip&&i.link)) return {ok:false,reason:'مفيش IP متظبط أو كابل',steps,hops};
     const own=this.owner(dstIp); if(own&&own.d===src) return {ok:true,hops:[src],steps,dst:src};
-    let t=ttl; let sip=null; const proto=(kind==='icmp'||kind==='reply')?'icmp':'udp'; const dport=kind==='dns'?53:null;
+    let t=ttl; let sip=null; let natInfo=null; let ingress=null; const proto=(kind==='icmp'||kind==='reply')?'icmp':'udp'; const dport=kind==='dns'?53:null;
     for(let guard=0;guard<32;guard++){
-      const r=this.route(cur,dstIp); if(sip===null&&r) sip=r.out.ip;
+      let r=this.route(cur,dstIp); if(sip===null&&r) sip=r.out.ip; if(r&&nat&&dstIp===nat.pub&&nat.router!==cur&&r.nh===dstIp&&nat.outIp) r={...r,nh:nat.outIp};
       if(!r) return {ok:false,reason:cur===src?'مفيش route / default gateway للوجهة دي':'Destination unreachable من '+cur.name,steps,hops,at:cur,type:'unreach'};
       if(cur!==src&&cur.type==='router'){ const dn=this.aclDeny(cur,r.out,'out',sip,dstIp,proto,dport); if(dn) return {ok:false,reason:'مقفول بـ ACL '+dn.id+' (out) على '+cur.name,steps,hops,at:cur,type:'unreach',acl:dn}; }
+      if(cur!==src&&cur.type==='router'&&cur.nat&&ingress&&ingress.natSide==='inside'&&r.out.natSide==='outside'){ const nt=this.natTranslate(cur,r.out,sip,dstIp,proto); if(nt){ natInfo={router:cur,real:sip,pub:nt,outIp:r.out.ip}; sip=nt; } }
       const mac=this.arpResolve(cur,r.out,r.nh,steps);
       if(!mac) return {ok:false,reason:'ARP فشل: مفيش حد رد على '+r.nh,steps,hops,at:cur,type:'arp'};
       const reach=this.l2reach(cur,r.out.phys||r.out,r.out.vlan??null);
@@ -122,8 +131,10 @@ export class Net {
       if(!hit) return {ok:false,reason:'الفريم متوصلش (VLAN مختلفة أو كابل)',steps,hops,at:cur,type:'l2'};
       steps.push({kind,path:hit.path,label});
       hops.push(hit.dev); const nd=hit.dev;
-      if(nd.type==='router'){ const ii=this.epIf(hit); if(ii){ const dn=this.aclDeny(nd,ii,'in',sip,dstIp,proto,dport); if(dn) return {ok:false,reason:'مقفول بـ ACL '+dn.id+' (in) على '+nd.name,steps,hops,at:nd,type:'unreach',acl:dn}; } }
-      if(this.l3(nd).some(i=>i.ip===dstIp)) return {ok:true,hops,steps,dst:nd};
+      ingress=this.epIf(hit);
+      if(nd.type==='router'){ const ii=ingress; if(ii){ const dn=this.aclDeny(nd,ii,'in',sip,dstIp,proto,dport); if(dn) return {ok:false,reason:'مقفول بـ ACL '+dn.id+' (in) على '+nd.name,steps,hops,at:nd,type:'unreach',acl:dn}; } }
+      if(nat&&nd===nat.router&&dstIp===nat.pub){ dstIp=nat.real; cur=nd; if(--t<=0) return {ok:false,reason:'TTL expired عند '+nd.name,steps,hops,at:nd,type:'ttl'}; continue; }
+      if(this.l3(nd).some(i=>i.ip===dstIp)) return {ok:true,hops,steps,dst:nd,nat:natInfo,seenAs:sip};
       if(nd.type!=='router') return {ok:false,reason:nd.name+' استقبل الباكت بس مش ليه',steps,hops,at:nd,type:'drop'};
       t--; if(t<=0) return {ok:false,reason:'TTL expired عند '+nd.name,steps,hops,at:nd,type:'ttl'};
       cur=nd; first=false;
@@ -136,10 +147,10 @@ export class Net {
     if(!ip){ const q=this.resolve(src,target); steps.push(...q.steps); if(!q.ip) return {ok:false,reason:'Name resolution failed: '+target,steps,hops:[]}; ip=q.ip; dnsInfo=q; }
     const go=this.send(src,ip,{label:'ICMP'}); steps.push(...go.steps);
     if(!go.ok) return {...go,steps,ip};
-    const back=this.send(go.dst,this.primaryIp(src)||ip,{kind:'reply',label:'رد'});
+    const back=this.send(go.dst,go.nat?go.nat.pub:(this.primaryIp(src)||ip),{kind:'reply',label:'رد',nat:go.nat});
     steps.push(...back.steps);
     if(!back.ok) return {ok:false,reason:'الباكت وصل بس الرد مرجعش ('+back.reason+') — راجع الـ gateway/route على الجهاز التاني',steps,hops:go.hops,ip};
-    return {ok:true,steps,hops:go.hops,back:back.hops,ip};
+    return {ok:true,steps,hops:go.hops,back:back.hops,ip,nat:go.nat,seenAs:go.seenAs};
   }
   resolve(src,name){
     const steps=[]; const dns=src.dns; if(!dns) return {ip:null,steps,why:'مفيش DNS server'};
@@ -154,7 +165,7 @@ export class Net {
     for(let ttl=1;ttl<=16;ttl++){
       const r=this.send(src,ip,{ttl,label:'TTL='+ttl}); if(ttl===1||true) steps.push(...r.steps);
       if(r.ok){ rows.push({ttl,name:r.dst.name,ip}); return {rows,ip,steps,ok:true}; }
-      if(r.type==='ttl'){ const x=r.at; rows.push({ttl,name:x.name,ip:this.ifaceTo(x,this.route(x,this.primaryIp(src)).nh)?.ip||this.primaryIp(x)}); }
+      if(r.type==='ttl'){ const x=r.at; rows.push({ttl,name:x.name,ip:this.ifaceTo(x,this.route(x,this.primaryIp(src))?.nh)?.ip||this.primaryIp(x)}); }
       else { rows.push({ttl,name:'*',ip:null,fail:r.reason}); return {rows,ip,steps,ok:false}; }
     }
     return {rows,ip,steps,ok:false};
@@ -214,7 +225,7 @@ export function runCli(net,d,line){
   else if(c==='show'&&a[1]==='vlan'&&isSw){ p('Port    Mode    VLAN   Link'); for(const i of d.ifaces) p(`${i.name.padEnd(7)} ${i.mode.padEnd(7)} ${String(i.mode==='trunk'?(i.allowed||'all'):i.vlan).padEnd(8)} ${i.link?'up':'down'}`); }
   else if(c==='show'&&a[1]==='mac'&&isSw){ const k=Object.entries(d.mac).map(([m,v])=>m+' '+(v.port||'')); p(k.length?'MAC learned: '+k.join(', '):'جدول MAC فاضي (ابعت ping الأول)'); }
   else if(c==='arp'&&!isSw){ const k=Object.entries(d.arp); if(!k.length) p('جدول ARP فاضي'); k.forEach(([a1,m])=>p(a1.split('|')[1]+'  →  '+m)); }
-  else if(c==='ping'&&!isSw){ if(!a[1]) throw 'ping <ip|name>'; const r=net.ping(d,a[1]); steps=r.steps; p(`PING ${a[1]}${r.ip&&r.ip!==a[1]?' ('+r.ip+')':''}`); if(r.ok){ const h=r.hops.length; for(let k=1;k<=4;k++) p(`Reply from ${r.ip}: bytes=32 time=${(h*0.8+k*0.1).toFixed(1)}ms TTL=${64-(h-1)}`); p('4/4 باكتات وصلت ✔'); tag='ping-ok'; } else { p('Request failed: '+r.reason); tag='ping-fail'; } return {out,steps,tag,r}; }
+  else if(c==='ping'&&!isSw){ if(!a[1]) throw 'ping <ip|name>'; const r=net.ping(d,a[1]); steps=r.steps; p(`PING ${a[1]}${r.ip&&r.ip!==a[1]?' ('+r.ip+')':''}`); if(r.ok){ const h=r.hops.length; for(let k=1;k<=4;k++) p(`Reply from ${r.ip}: bytes=32 time=${(h*0.8+k*0.1).toFixed(1)}ms TTL=${64-(h-1)}`); p('4/4 باكتات وصلت ✔'); if(r.nat) p(`NAT: الراوتر ${r.nat.router.name} ترجم ${r.nat.real} ← ${r.nat.pub} (السيرفر شاف ${r.seenAs})`); tag='ping-ok'; } else { p('Request failed: '+r.reason); tag='ping-fail'; } return {out,steps,tag,r}; }
   else if(c==='traceroute'&&!isSw){ if(!a[1]) throw 'traceroute <ip|name>'; const r=net.traceroute(d,a[1]); steps=r.steps; p('traceroute to '+a[1]+', max 16 hops'); if(r.nameFail) p('✖ فشل حل الاسم (DNS): '+a[1]); r.rows.forEach(x=>p(` ${x.ttl}  ${x.ip?x.ip.padEnd(16):'*'.padEnd(16)} ${x.name==='*'?'  '+x.fail:'('+x.name+')'}`)); if(r.ok) tag='trace-ok'; return {out,steps,tag,r}; }
   else if(c==='nslookup'&&isHost){ if(!a[1]) throw 'nslookup <name>'; const q=net.resolve(d,a[1]); steps=q.steps; if(q.ip){ p('Server: '+d.dns); p(`${a[1]} → ${q.ip}`); tag='dns-ok'; } else p('فشل: '+(q.why||'NXDOMAIN')); }
   else throw `أمر غير معروف: ${c} (اكتب help)`;
