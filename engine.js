@@ -63,18 +63,20 @@ export class Net {
       let vv=v; if(ni.mode==='access'){ vv=ni.vlan; } else if(v==null) vv=1;
       if(ni.mode==='trunk'&&!okAllowed(ni,vv)) return;
       const key=nd.id+ni.name+vv; if(seen.has(key)) return; seen.add(key);
+      const sv=nd.svis&&nd.svis[vv]; if(sv&&sv.ip&&sv.up&&!seen.has('svi'+nd.id+vv)){ seen.add('svi'+nd.id+vv); out.push({dev:nd,iface:sv,vlan:vv,path:[...path,nd.id],via,svi:true}); }
       for(const oi of nd.ifaces){ if(oi===ni||!oi.link) continue; if(oi.mode==='access'&&oi.vlan!==vv) continue; if(oi.mode==='trunk'&&!okAllowed(oi,vv)) continue; walk(nd,oi,oi.mode==='trunk'?vv:null,[...path,nd.id],[...via,{dev:nd,in:ni.name,out:oi.name,vlan:vv}]); }
     };
-    walk(src,iface,vlan,[src.id],[]); this._stp=null; return out;
+    if(iface&&iface.svi){ for(const oi of src.ifaces){ if(!oi.link||!oi.up) continue; if(oi.mode==='access'&&oi.vlan!==vlan) continue; if(oi.mode==='trunk'&&!okAllowed(oi,vlan)) continue; walk(src,oi,vlan,[src.id],[{dev:src,in:'Vlan'+vlan,out:oi.name,vlan}]); } }
+    else walk(src,iface,vlan,[src.id],[]); this._stp=null; return out;
   }
   // نقط دخول الـ vlan: لما host يتوصل بـ access port الـ vlan هي vlan البورت
-  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up,aclIn:sb.aclIn,aclOut:sb.aclOut,natSide:sb.natSide,helper:sb.helper,subRef:sb}); } else o.push(i); } return o; }
+  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up,aclIn:sb.aclIn,aclOut:sb.aclOut,natSide:sb.natSide,helper:sb.helper,subRef:sb}); } else o.push(i); } if(d.type==='switch'&&d.svis) for(const v of Object.values(d.svis)) o.push(v); return o; }
   epIf(r){ const i=r.iface; if(i.subs&&i.subs.length){ return this.l3(r.dev).find(x=>x.phys===i&&x.vlan===r.vlan)||null; } return i; }
   owner(ip){ for(const d of this.devices) for(const i of this.l3(d)) if(i.ip===ip) return {d,i}; return null; }
   arpResolve(d,out,nh,steps){
     const key=out.name+'|'+nh; if(d.arp[key]) return d.arp[key];
     const reach=this.l2reach(d,out.phys||out,out.vlan??null);
-    const hit=reach.find(r=>{const e=this.epIf(r);return e&&e.ip===nh&&r.dev.type!=='switch';});
+    const hit=reach.find(r=>{const e=this.epIf(r);return e&&e.ip===nh&&(r.dev.type!=='switch'||r.svi);});
     reach.forEach(r=>steps.push({kind:'arp',path:r.path,label:'ARP؟'}));
     if(!hit) return null;
     steps.push({kind:'arp',path:[...hit.path].reverse(),label:'ARP رد'});
