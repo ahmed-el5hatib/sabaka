@@ -13,7 +13,7 @@ export class Net {
   add(type,x,z,name){
     const T=TYPES[type]; this.cnt[type]=(this.cnt[type]||0)+1;
     const d={id:'d'+(this.seq++),type,name:name||T.prefix+this.cnt[type],x,z,ifaces:[],gateway:'',dns:'',routes:[],arp:{},mac:{},
-      dhcp:{on:false,start:'',count:20,gw:'',dns:'',leases:{}},dnsRecords:{},dhcpClient:false};
+      vlans:{1:'default'},dhcp:{on:false,start:'',count:20,gw:'',dns:'',leases:{}},dnsRecords:{},dhcpClient:false};
     for(let i=0;i<T.ports;i++){ d.ifaces.push({name:T.pre+(type==='switch'?i+1:i),ip:'',mask:'',mac:this.newMac(),link:null,vlan:1,mode:'access',up:true}); }
     this.devices.push(d); return d;
   }
@@ -35,19 +35,19 @@ export class Net {
   // L2: يرجع كل النهايات (non-switch) اللي توصلها الفريم + المسار
   l2reach(src,iface,vlan=null){
     const out=[]; const seen=new Set();
-    const walk=(from,fi,v,path)=>{
+    const walk=(from,fi,v,path,via)=>{
       const p=this.peer(from,fi); if(!p||!fi.up||!p.iface.up) return;
       const nd=p.dev, ni=p.iface;
-      if(nd.type!=='switch'){ out.push({dev:nd,iface:ni,vlan:v,path:[...path,nd.id]}); return; }
+      if(nd.type!=='switch'){ out.push({dev:nd,iface:ni,vlan:v,path:[...path,nd.id],via}); return; }
       let vv=v; if(ni.mode==='access'){ vv=ni.vlan; } else if(v==null) vv=1;
       if(ni.mode==='trunk'&&!okAllowed(ni,vv)) return;
       const key=nd.id+ni.name+vv; if(seen.has(key)) return; seen.add(key);
-      for(const oi of nd.ifaces){ if(oi===ni||!oi.link) continue; if(oi.mode==='access'&&oi.vlan!==vv) continue; if(oi.mode==='trunk'&&!okAllowed(oi,vv)) continue; walk(nd,oi,oi.mode==='trunk'?vv:null,[...path,nd.id]); }
+      for(const oi of nd.ifaces){ if(oi===ni||!oi.link) continue; if(oi.mode==='access'&&oi.vlan!==vv) continue; if(oi.mode==='trunk'&&!okAllowed(oi,vv)) continue; walk(nd,oi,oi.mode==='trunk'?vv:null,[...path,nd.id],[...via,{dev:nd,in:ni.name,out:oi.name,vlan:vv}]); }
     };
-    walk(src,iface,vlan,[src.id]); return out;
+    walk(src,iface,vlan,[src.id],[]); return out;
   }
   // نقط دخول الـ vlan: لما host يتوصل بـ access port الـ vlan هي vlan البورت
-  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length) for(const sb of i.subs) o.push({name:i.name+'.'+sb.vlan,phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up}); else o.push(i); } return o; }
+  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length) for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up}); else o.push(i); } return o; }
   epIf(r){ const i=r.iface; if(i.subs&&i.subs.length){ return this.l3(r.dev).find(x=>x.phys===i&&x.vlan===r.vlan)||null; } return i; }
   owner(ip){ for(const d of this.devices) for(const i of this.l3(d)) if(i.ip===ip) return {d,i}; return null; }
   arpResolve(d,out,nh,steps){
@@ -57,9 +57,9 @@ export class Net {
     reach.forEach(r=>steps.push({kind:'arp',path:r.path,label:'ARP؟'}));
     if(!hit) return null;
     steps.push({kind:'arp',path:[...hit.path].reverse(),label:'ARP رد'});
-    const hm=this.epIf(hit); d.arp[key]=hm.mac; hit.dev.arp[hm.name+'|'+(out.ip)]=out.mac; this.learn(reach,d,out); return hit.iface.mac;
+    const hm=this.epIf(hit); d.arp[key]=hm.mac; hit.dev.arp[hm.name+'|'+(out.ip)]=out.mac; this.learn(reach,out,hit,hm); return hm.mac;
   }
-  learn(reach,d,out){ for(const r of reach){ for(let k=0;k<r.path.length;k++){ const s=this.dev(r.path[k]); if(s.type==='switch'){ s.mac[out.mac]=s.mac[out.mac]||true; } } } }
+  learn(reach,out,hit,hm){ for(const r of reach) for(const v of (r.via||[])) v.dev.mac[out.mac]={port:v.in,vlan:v.vlan}; for(const v of (hit.via||[])) v.dev.mac[hm.mac]={port:v.out,vlan:v.vlan}; }
   route(d,dst){
     // يرجع {out,nh} أو null
     const cand=[];
@@ -113,7 +113,7 @@ export class Net {
   }
   traceroute(src,target){
     let ip=ip2n(target)!==null?target:null; const rows=[]; const steps=[];
-    if(!ip){ const q=this.resolve(src,target); steps.push(...q.steps); if(!q.ip) return {rows,ip:null,steps,reason:'Name resolution failed'}; ip=q.ip; }
+    if(!ip){ const q=this.resolve(src,target); steps.push(...q.steps); if(!q.ip) return {rows,ip:null,steps,reason:'Name resolution failed',nameFail:true}; ip=q.ip; }
     for(let ttl=1;ttl<=16;ttl++){
       const r=this.send(src,ip,{ttl,label:'TTL='+ttl}); if(ttl===1||true) steps.push(...r.steps);
       if(r.ok){ rows.push({ttl,name:r.dst.name,ip}); return {rows,ip,steps,ok:true}; }
@@ -175,10 +175,10 @@ export function runCli(net,d,line){
   else if(c==='vlan'&&isSw){ const i=a[1]&&net.iface(d,a[1]); if(!i||!(+a[2]>0&&+a[2]<4095)) throw 'مثال: vlan fa0/2 10'; i.vlan=+a[2]; i.mode='access'; p(`${a[1]} → VLAN ${a[2]} (access)`); }
   else if(c==='trunk'&&isSw){ const i=a[1]&&net.iface(d,a[1]); if(!i) throw 'مثال: trunk fa0/8'; i.mode='trunk'; i.allowed=a[2]||''; if(i.allowed&&i.allowed.split(',').some(x=>!(+x>0))) {i.allowed=''; throw 'صيغة الـ VLANs غلط. مثال: 10,20';} p(a[1]+' بقى trunk'+(i.allowed?' (VLANs: '+i.allowed+')':' (كل الـ VLANs)')); }
   else if(c==='show'&&a[1]==='vlan'&&isSw){ p('Port    Mode    VLAN   Link'); for(const i of d.ifaces) p(`${i.name.padEnd(7)} ${i.mode.padEnd(7)} ${String(i.mode==='trunk'?(i.allowed||'all'):i.vlan).padEnd(8)} ${i.link?'up':'down'}`); }
-  else if(c==='show'&&a[1]==='mac'&&isSw){ const k=Object.keys(d.mac); p(k.length?'MAC learned: '+k.join(', '):'جدول MAC فاضي (ابعت ping الأول)'); }
+  else if(c==='show'&&a[1]==='mac'&&isSw){ const k=Object.entries(d.mac).map(([m,v])=>m+' '+(v.port||'')); p(k.length?'MAC learned: '+k.join(', '):'جدول MAC فاضي (ابعت ping الأول)'); }
   else if(c==='arp'&&!isSw){ const k=Object.entries(d.arp); if(!k.length) p('جدول ARP فاضي'); k.forEach(([a1,m])=>p(a1.split('|')[1]+'  →  '+m)); }
   else if(c==='ping'&&!isSw){ if(!a[1]) throw 'ping <ip|name>'; const r=net.ping(d,a[1]); steps=r.steps; p(`PING ${a[1]}${r.ip&&r.ip!==a[1]?' ('+r.ip+')':''}`); if(r.ok){ const h=r.hops.length; for(let k=1;k<=4;k++) p(`Reply from ${r.ip}: bytes=32 time=${(h*0.8+k*0.1).toFixed(1)}ms TTL=${64-(h-1)}`); p('4/4 باكتات وصلت ✔'); tag='ping-ok'; } else { p('Request failed: '+r.reason); tag='ping-fail'; } return {out,steps,tag,r}; }
-  else if(c==='traceroute'&&!isSw){ if(!a[1]) throw 'traceroute <ip|name>'; const r=net.traceroute(d,a[1]); steps=r.steps; p('traceroute to '+a[1]+', max 16 hops'); r.rows.forEach(x=>p(` ${x.ttl}  ${x.ip?x.ip.padEnd(16):'*'.padEnd(16)} ${x.name==='*'?'  '+x.fail:'('+x.name+')'}`)); if(r.ok) tag='trace-ok'; return {out,steps,tag,r}; }
+  else if(c==='traceroute'&&!isSw){ if(!a[1]) throw 'traceroute <ip|name>'; const r=net.traceroute(d,a[1]); steps=r.steps; p('traceroute to '+a[1]+', max 16 hops'); if(r.nameFail) p('✖ فشل حل الاسم (DNS): '+a[1]); r.rows.forEach(x=>p(` ${x.ttl}  ${x.ip?x.ip.padEnd(16):'*'.padEnd(16)} ${x.name==='*'?'  '+x.fail:'('+x.name+')'}`)); if(r.ok) tag='trace-ok'; return {out,steps,tag,r}; }
   else if(c==='nslookup'&&isHost){ if(!a[1]) throw 'nslookup <name>'; const q=net.resolve(d,a[1]); steps=q.steps; if(q.ip){ p('Server: '+d.dns); p(`${a[1]} → ${q.ip}`); tag='dns-ok'; } else p('فشل: '+(q.why||'NXDOMAIN')); }
   else throw `أمر غير معروف: ${c} (اكتب help)`;
   }catch(e){ p('✖ '+(e.message||e)); }
