@@ -28,6 +28,7 @@ function runningConfig(net,d){ const o=['Building configuration...','','Current 
     if(d.type==='router'){ if(i.ip) o.push(` ip address ${i.ip} ${i.mask}`); else if(!subs.length) o.push(' no ip address'); }
     else { if(i.mode==='trunk'){ o.push(' switchport mode trunk'); if(i.allowed) o.push(' switchport trunk allowed vlan '+i.allowed); } else { if(i.vlan!==1) o.push(' switchport access vlan '+i.vlan); o.push(' switchport mode access'); } }
     if(i.ospfCost) o.push(' ip ospf cost '+i.ospfCost);
+    if(i.helper) o.push(' ip helper-address '+i.helper);
     if(i.natSide) o.push(' ip nat '+i.natSide);
     if(i.aclIn) o.push(' ip access-group '+i.aclIn+' in'); if(i.aclOut) o.push(' ip access-group '+i.aclOut+' out');
     if(!i.up) o.push(' shutdown'); o.push('!');
@@ -117,6 +118,8 @@ const IF_ROUTER=[
  {p:'ip access-group <id> <dir>',d:'Specify access control for packets',h:({d,a,s,out,res})=>{ const dir=a[1]; if(dir!=='in'&&dir!=='out'){ out.push('% Invalid input. اكتب in أو out'); return; } if(!(d.acls||{})[a[0]]) out.push('% تحذير: الـ ACL '+a[0]+' لسه مش متعرّفة (هتتطبق لما تتعرّف)'); const t=s.sub?(s.sub.subRef||s.sub):s.ifs[0]; t[dir==='in'?'aclIn':'aclOut']=a[0]; res.changed=true; }},
  {p:'no ip access-group <id> <dir>',d:'Remove access control from the interface',h:({a,s,res})=>{ const t=s.sub||s.ifs[0]; delete t[a[1]==='in'?'aclIn':'aclOut']; res.changed=true; }},
  {p:'ip ospf cost <n>',d:'Interface cost',h:({a,s,out})=>{ if(!(+a[0]>0)){ out.push('% Invalid cost'); return; } s.ifs[0].ospfCost=+a[0]; }},
+ {p:'ip helper-address <ip>',d:'Forward DHCP broadcasts to a server (relay)',h:({d,a,s,out,res})=>{ if(d.type!=='router'){ out.push('% helper-address is for routers'); return; } if(ip2n(a[0])===null){ out.push('% Invalid address. مثال: ip helper-address 10.0.0.5'); return; } const t=s.sub?(s.sub.subRef||s.sub):s.ifs[0]; t.helper=a[0]; res.changed=true; }},
+ {p:'no ip helper-address',d:'Remove the DHCP relay',h:({s,res})=>{ const t=s.sub?(s.sub.subRef||s.sub):s.ifs[0]; delete t.helper; res.changed=true; }},
  {p:'ip nat <side>',d:'NAT interface commands (inside | outside)',h:({a,s,out,res})=>{ if(a[0]!=='inside'&&a[0]!=='outside'){ out.push('% Invalid input. اكتب ip nat inside أو ip nat outside'); return; } const t=s.sub?(s.sub.subRef||s.sub):s.ifs[0]; t.natSide=a[0]; res.changed=true; }},
  {p:'no ip nat <side>',d:'Remove NAT role',h:({s,res})=>{ const t=s.sub||s.ifs[0]; delete t.natSide; res.changed=true; }},
  {p:'no ip address',d:'Remove the IP address',h:({s})=>{ const t=s.sub||s.ifs[0]; t.ip=''; t.mask=''; }},
@@ -248,4 +251,4 @@ export function exec(net,d,line){
   };
   run(toks,defs);
   if(res.changed) res.changed=true; return res;
-}
+      }
