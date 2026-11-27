@@ -88,7 +88,25 @@ function mac(root){
    $('#mLog').innerHTML=m.join('');draw(to,s);};
   $('#mGo').onclick=go;$('#mRs').onclick=()=>{tab={};$('#mLog').innerHTML='';draw();};draw();
 }
-const WID={calc,topo,chunk,osi,mac};
+
+function arp(root){
+  root.innerHTML='<div class="calc"><svg id="aSv" viewBox="0 0 400 130" style="width:100%;max-width:480px;display:block;margin:auto"></svg><div class="row"><button class="btn2" id="aN">الخطوة التالية</button><button class="btn2 ghost" id="aR">من الأول</button></div><div id="aT"></div></div>';
+  const S=[
+  ['الحالة الابتدائية','PC1 عنده IP لـ PC2 وعايز يبعتله ping. الـ ARP cache بتاعه فاضي. مش عارف MAC بتاع 192.168.1.20.',[],[],'-'],
+  ['1) ARP Request (Broadcast)','Dest MAC = FF:FF:FF:FF:FF:FF | Src MAC = AA:AA | "Who has 192.168.1.20? Tell 192.168.1.10"',['B','C'],['B','C'],'-'],
+  ['2) الـ Switch بيعمل Flood','الـ broadcast اتبعت لكل المنافذ. PC3 شاف إن الـ IP مش بتاعه فتجاهلها. PC2 عرف إنه المقصود.',['B','C'],['B'],'-'],
+  ['3) ARP Reply (Unicast)','Dest MAC = AA:AA | Src MAC = BB:BB | "192.168.1.20 is at BB:BB". PC2 كمان سجّل MAC بتاع PC1.',['A'],['A'],'-'],
+  ['4) تحديث الـ ARP cache','PC1 سجّل: 192.168.1.20 → BB:BB. الـ entry بتعيش كام دقيقة.',[],[],'192.168.1.20 → BB:BB'],
+  ['5) الـ ICMP Echo (ping) مباشرة','دلوقتي الـ frame: Dest MAC = BB:BB | Src MAC = AA:AA | Payload: ICMP echo. Unicast، من غير broadcast.',['B'],['B'],'192.168.1.20 → BB:BB']];
+  let i=0;const draw=()=>{const [t,d,hl,rcv,cache]=S[i];const x={A:70,B:200,C:330},nm={A:'PC1 AA:AA',B:'PC2 BB:BB',C:'PC3 CC:CC'};
+   let s='<rect x="120" y="40" width="160" height="28" rx="8" fill="#141d31" stroke="#3ddc97"/><text x="200" y="59" fill="#3ddc97" text-anchor="middle" font-size="13">Switch</text>';
+   for(const k of 'ABC'){const act=hl.includes(k)||(i===1&&k==='A')||(i===3&&k==='B')||(i===5&&k==='A');const c=rcv.includes(k)?'#ffa94d':act?'#37e1ff':'#22304d';s+=`<line x1="${x[k]}" y1="68" x2="${x[k]}" y2="95" stroke="${c}" stroke-width="3"/><rect x="${x[k]-42}" y="95" width="84" height="28" rx="6" fill="#0e1524" stroke="${c}" stroke-width="2"/><text x="${x[k]}" y="113" fill="#dbe6ff" text-anchor="middle" font-size="11">${nm[k]}</text>`;}
+   $('#aSv').innerHTML=s;
+   $('#aT').innerHTML=`<h3>${t}</h3><p class="ltr" style="text-align:right">${d}</p><p><b>ARP cache عند PC1:</b> <span class="ltr">${cache}</span></p>`;
+   $('#aN').disabled=i===S.length-1;};
+  $('#aN').onclick=()=>{if(i<S.length-1){i++;draw();}};$('#aR').onclick=()=>{i=0;draw();};draw();
+}
+const WID={calc,topo,chunk,osi,mac,arp};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
