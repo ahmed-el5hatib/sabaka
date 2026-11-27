@@ -280,5 +280,56 @@ quiz:[
 {q:'Standard ACL بتتحط:',o:['قريب من المصدر','قريب من الهدف','في أي حتة','على الـ Switch'],a:1,e:'لأنها بتفلتر Source بس.'},
 {q:'القواعد بتتقرأ:',o:['من تحت لفوق','عشوائي','من فوق لتحت وأول تطابق ينفّذ','كلها مع بعض'],a:2,e:'ولذلك الترتيب مهم.'},
 {q:'Extended ACL بتفلتر على:',o:['Source IP بس','MAC','Source و Destination و بروتوكول و Port','VLAN'],a:2,e:'ولذلك بتتحط قريب من المصدر.'}
+]},
+nat:{id:'nat',nav:'NAT و PAT',ex:'nat',
+title:'NAT و PAT: إزاي شبكة البيت كلها بتطلع بعنوان واحد',
+sub:'ليه الـ Private IPs مش بتوصل للإنترنت، وإزاي الراوتر بيترجم العناوين والبورتات.',
+sections:[
+{html:`<h2>1) المشكلة: عناوين IPv4 مش كفاية</h2>
+<p>IPv4 فيه حوالي 4.3 مليار عنوان، وده أقل بكتير من عدد الأجهزة في العالم. الحل الأساسي كان تقسيم العناوين لنوعين:</p>
+<ul><li><b>Public IPs:</b> فريدة عالمياً وبتتوجّه على الإنترنت. بتتشترى/بتتأجر من الـ ISP.</li><li><b>Private IPs (RFC 1918):</b> <code>10.0.0.0/8</code> و <code>172.16.0.0/12</code> و <code>192.168.0.0/16</code>. أي شبكة تقدر تستخدمها، فبتتكرر في ملايين الشبكات، ومستحيل تتوجّه على الإنترنت (الراوترات هناك بترميها).</li></ul>
+<p>طيب إزاي موبايلك (192.168.1.20) بيفتح Google؟ الراوتر بتاع البيت بيعمل <b>NAT (Network Address Translation)</b>: بيغيّر الـ Source IP للـ packet من الـ private لـ public بتاعه وهي خارجة، ولما الرد يرجع بيغيّره تاني للـ private ويوصّله للجهاز الصح.</p>`},
+{html:`<h2>2) المصطلحات الأربعة (مهمة جداً)</h2>
+<table><tr><th>المصطلح</th><th>المعنى</th><th>مثال</th></tr>
+<tr><td><b>Inside local</b></td><td>عنوان الجهاز الداخلي كما هو في الشبكة الداخلية</td><td class="ltr">192.168.1.10</td></tr>
+<tr><td><b>Inside global</b></td><td>نفس الجهاز كما يظهر للعالم الخارجي</td><td class="ltr">41.1.1.1</td></tr>
+<tr><td><b>Outside global</b></td><td>عنوان الجهاز الخارجي (Google مثلاً)</td><td class="ltr">93.184.216.34</td></tr>
+<tr><td><b>Outside local</b></td><td>الجهاز الخارجي كما يظهر داخلياً (عادةً نفس الـ global)</td><td class="ltr">93.184.216.34</td></tr></table>
+<p>و "inside" = الشبكة اللي الراوتر بيحميها، "outside" = الجهة التانية. بنحدد ده على الـ interfaces: <code>ip nat inside</code> و <code>ip nat outside</code>.</p>`},
+{html:`<h2>3) أنواع الـ NAT</h2>
+<h3>Static NAT (واحد لواحد)</h3><p>عنوان private ثابت ↔ عنوان public ثابت. بيُستخدم لما سيرفر داخلي لازم الناس تدخل عليه من برّه (Web server).</p>
+<pre>R1(config)# ip nat inside source static 192.168.1.10 41.1.1.10
+R1(config)# interface g0/0
+R1(config-if)# ip nat inside
+R1(config)# interface g0/1
+R1(config-if)# ip nat outside</pre>
+<h3>Dynamic NAT</h3><p>مجموعة (pool) من العناوين الـ public، وكل جهاز داخلي بياخد واحد وقت ما يحتاج ويرجّعه بعدين. لو الـ pool خلص، الجهاز اللي بعده مش هيعرف يطلع. محدود فنادراً بيُستخدم.</p>
+<h3>PAT (Port Address Translation) / NAT Overload</h3><p>الأهم واللي كل راوتر بيت بيعمله. <b>عنوان public واحد</b> بيخدم مئات الأجهزة، والتمييز بيتم بالـ <b>Port</b>: كل اتصال بياخد Source port فريد على الـ public IP. الراوتر بيحتفظ بجدول <b>NAT translation table</b>.</p>
+<pre>R1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
+R1(config)# ip nat inside source list 1 interface g0/1 overload</pre>
+<p>الـ ACL هنا بتحدد <b>مين</b> يتترجم، وكلمة <code>overload</code> هي اللي بتفعّل الـ PAT.</p>`},
+{html:`<h2>4) جرّب الـ PAT بنفسك</h2>
+<p>الراوتر عنده Public IP واحد <code>41.1.1.1</code>. كل ضغطة "اتصال جديد" بتخلّي جهاز داخلي يفتح اتصال لـ Web server خارجي (93.184.216.34:80). لاحظ إزاي بيتبني الجدول وإن عدة أجهزة بتظهر بنفس الـ IP وبـ ports مختلفة:</p>`,widget:'nat'},
+{html:`<h2>5) إيه اللي بيحصل خطوة بخطوة؟</h2>
+<ol><li>PC (192.168.1.10:51000) بيبعت لـ 93.184.216.34:80.</li><li>الراوتر يستقبل على interface الـ inside، يطابق مع الـ ACL، ويعمل entry: <span class="ltr">192.168.1.10:51000 ↔ 41.1.1.1:1024</span>.</li><li>يغيّر الـ Source IP:Port في الـ packet لـ 41.1.1.1:1024 ويرسلها.</li><li>السيرفر يرد على 41.1.1.1:1024.</li><li>الراوتر يلاقي الـ entry، يحوّل الـ Destination لـ 192.168.1.10:51000 ويسلّمها.</li></ol>
+<h3>حدود NAT</h3>
+<ul><li>الاتصالات اللي بتبدأ من برّه للداخل مش هتعدّي (مفيش entry) إلا لو عملت Static NAT أو <b>port forwarding</b>.</li><li>بيكسّر مبدأ end-to-end وبعض البروتوكولات اللي بتحط الـ IP جوّا الـ payload (محتاجة ALG).</li><li>NAT <b>مش firewall</b> رغم إنه بيخفي العناوين الداخلية كأثر جانبي.</li><li>الحل الحقيقي للمشكلة: <b>IPv6</b>.</li></ul>
+<div class="box warn"><b class="t">في المحاكي</b>بيدعم Static و PAT (overload) على interface. مفيش Dynamic pool، ومفيش اتصالات inbound من برّه إلا عن طريق Static. وجدول الترجمة بيتعرض بـ <code>show ip nat translations</code>.</div>`},
+{html:`<h2>6) أخطاء وتشخيص</h2>
+<div class="box err"><ul>
+<li>نسيان <code>ip nat inside</code> / <code>outside</code> على الـ interfaces.</li>
+<li>الـ ACL مش بتغطي الشبكة الداخلية، فمفيش حد بيتترجم.</li>
+<li>نسيان <code>overload</code>: يترجم جهاز واحد بس.</li>
+<li>مفيش default route للراوتر نحو الـ ISP.</li>
+<li>الاستغراب إن الـ ping لـ IP private برّه مش شغال: ده طبيعي.</li></ul></div>
+<p>التشخيص: <code>show ip nat translations</code> (الجدول فاضي = مفيش ترافيك بيتترجم)، <code>show ip nat statistics</code> (عدد hits و misses).</p>`}
+],
+tryText:'اضغط زر NAT في المحاكي. اعمل ping من PC داخلي لسيرفر برّه، وبعدين على الراوتر <code>show ip nat translations</code> و <code>show ip nat statistics</code>. لاحظ الـ Inside local مقابل الـ Inside global.',
+quiz:[
+{q:'أنهي عنوان private؟',o:['8.8.8.8','172.20.5.1','41.1.1.1','200.1.1.1'],a:1,e:'172.16.0.0/12 يغطي 172.16–172.31.'},
+{q:'PAT بيفرّق بين الأجهزة الداخلية بـ:',o:['MAC','Port numbers','TTL','VLAN'],a:1,e:'نفس الـ IP والـ ports مختلفة.'},
+{q:'الكلمة اللي بتفعّل PAT في أمر الـ NAT:',o:['inside','overload','static','pool'],a:1,e:'ip nat inside source list ... overload.'},
+{q:'Inside global هو:',o:['الجهاز الداخلي بعنوانه الخاص','الجهاز الداخلي كما يراه العالم','السيرفر الخارجي','الـ gateway'],a:1,e:'العنوان الـ public اللي بيتترجم له.'},
+{q:'ليه NAT مش بيعتبر Firewall؟',o:['بيمنع كل حاجة','لأنه بيترجم عناوين مش بيطبّق سياسة أمان','لأنه بيشفّر','لأنه L2'],a:1,e:'الإخفاء أثر جانبي، مش حماية حقيقية.'}
 ]}
 };
