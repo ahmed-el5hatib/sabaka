@@ -108,4 +108,57 @@ quiz:[
 {q:'أنهي delay مش بتقلله بزيادة الـ bandwidth؟',o:['Transmission','Queuing','Propagation','Processing'],a:2,e:'الـ propagation مرتبطة بالمسافة وسرعة الإشارة، مش بسعة اللينك.'},
 {q:'الـ Switch بيقرأ في الـ frame:',o:['الـ MAC بس تقريباً','الـ IP والـ port','الـ HTTP','الـ DNS'],a:0,e:'الـ Switch بيشتغل في الـ Data Link فبيهتم بالـ MAC.'}
 ]},
+{id:'models',nav:'نماذج OSI و TCP/IP',ex:'example',
+title:'نماذج الشبكات: OSI و TCP/IP طبقة بطبقة',
+sub:'ليه الشبكات مقسمة طبقات؟ كل طبقة بتعمل إيه؟ وإزاي تستخدم النموذج ده في تشخيص الأعطال.',
+sections:[
+{html:`<h2>1) ليه محتاجين "نموذج" أصلاً؟</h2>
+<p>الشبكة شغلانة معقدة جداً: كهرباء وإشارات، عناوين، توجيه، ضمان وصول، تشفير، شكل الصفحات... لو كل ده اتكتب في برنامج واحد ضخم، أي تغيير صغير كان هيكسر كل حاجة. الحل المعروف في الهندسة: <b>نقسّم المشكلة لطبقات (Layers)</b>، كل طبقة:</p>
+<ul><li>ليها <b>مسؤولية واحدة واضحة</b>.</li><li>بتتعامل مع الطبقة اللي فوقها واللي تحتها بس عن طريق "واجهة" ثابتة.</li><li>تقدر تتغير من جوّا من غير ما الباقي يحس. (Wi-Fi بدل كابل؟ الطبقات اللي فوق مش هتفرق.)</li></ul>
+<p>ده بالظبط سبب إن Chrome بيشتغل على أي نوع اتصال. وكمان سبب إن شركات مختلفة تصنع أجهزة تتكلم مع بعض: بيتفقوا على شكل كل طبقة.</p>
+<p>فيه نموذجين هتسمع عنهم دايماً:</p>
+<ul><li><b>OSI</b> (7 طبقات): نموذج <b>مرجعي نظري</b> للتعليم والتشخيص والمصطلحات.</li><li><b>TCP/IP</b> (4 أو 5 طبقات): النموذج <b>العملي</b> اللي الإنترنت فعلاً مبني عليه.</li></ul>`},
+{html:`<h2>2) الطبقات السبع (OSI)</h2>
+<p>من فوق لتحت. جملة تحفيظ بالإنجليزي: <b>A</b>ll <b>P</b>eople <b>S</b>eem <b>T</b>o <b>N</b>eed <b>D</b>ata <b>P</b>rocessing. اضغط على أي طبقة وشوف شرحها، وإزاي الـ headers بتتراكم لحد الطبقة دي:</p>`,widget:'osi'},
+{html:`<h2>3) مقارنة OSI بـ TCP/IP</h2>
+<table><tr><th>OSI</th><th>TCP/IP (5 طبقات)</th><th>الـ PDU</th></tr>
+<tr><td>7 Application<br>6 Presentation<br>5 Session</td><td>Application</td><td>Data / Message</td></tr>
+<tr><td>4 Transport</td><td>Transport</td><td>Segment (TCP) / Datagram (UDP)</td></tr>
+<tr><td>3 Network</td><td>Internet / Network</td><td>Packet</td></tr>
+<tr><td>2 Data Link</td><td>Data Link</td><td>Frame</td></tr>
+<tr><td>1 Physical</td><td>Physical</td><td>Bits</td></tr></table>
+<p>الفرق الأساسي إن TCP/IP بيدمج الـ 3 طبقات العليا في Application واحدة، لأن في الواقع التطبيق نفسه (المتصفح مثلاً) هو اللي بيتعامل مع التشفير والجلسات. وبنستخدم OSI كلغة مشتركة: لما حد يقول "مشكلة Layer 2" كلنا نعرف يقصد Switch/MAC، و"Layer 3" يقصد IP/Routing.</p>
+<div class="box tip"><b class="t">أجهزة وطبقات</b>Hub = L1، Switch = L2، Router = L3، Firewall = L3/L4 (والـ next-gen لحد L7). فيه Switch بيشتغل L3 كمان (Layer 3 switch) وهنستخدمه مع الـ VLAN.</div>`},
+{html:`<h2>4) مثال محلول: تفتح http://example.com</h2>
+<ol>
+<li><b>Application:</b> المتصفح يكتب الطلب <code>GET / HTTP/1.1</code> ويحتاج IP الموقع، فيسأل <b>DNS</b> الأول (طلب تاني بنفس الطريقة).</li>
+<li><b>Transport:</b> يفتح اتصال <b>TCP</b> لبورت 80 (أو 443 لو HTTPS) عن طريق <b>3-way handshake</b> (SYN, SYN-ACK, ACK). يختار بورت مصدر عشوائي (مثلاً 51234). TCP بيرقّم الحتت ويعيد المفقود.</li>
+<li><b>Network:</b> يضيف IP header: المصدر = IP جهازك، الهدف = IP الموقع، TTL=64.</li>
+<li><b>Data Link:</b> الهدف برّه الشبكة؟ يبعت لـ Gateway، فيعرف MAC الـ gateway بـ <b>ARP</b>، ويلف الـ frame بـ Ethernet header.</li>
+<li><b>Physical:</b> الـ frame يتحول لإشارات كهربية/ضوئية على الكابل أو موجات Wi-Fi.</li>
+</ol>
+<p>على جهاز السيرفر بيحصل العكس تماماً من تحت لفوق: كل طبقة تفك الـ header بتاعها وتسلّم اللي جوّا للطبقة اللي فوقها. وكل طبقة بتتكلم مع "نظيرتها" على الجهاز التاني (Peer-to-peer logical communication) كأن فيه خط مباشر بينهم، بس فعلياً الكلام بينزل ويطلع.</p>
+<div class="box sim"><b class="t">في المحاكي</b>اعمل ping بين جهازين ولاحظ ألوان الـ packets في الـ animation: ARP (أصفر) بييجي الأول، وبعدين ICMP. ده بالظبط الـ Layer 2 قبل الـ Layer 3. وجرّب شاشة الـ DHCP/DNS في الـ Server.</div>`},
+{html:`<h2>5) استخدام الطبقات في تشخيص الأعطال (Troubleshooting)</h2>
+<p>الطريقة المنظمة: ابدأ من <b>تحت لفوق</b> (Bottom-up) أو من فوق لتحت، المهم متقفزش:</p>
+<table><tr><th>الطبقة</th><th>اسأل نفسك</th><th>أداة</th></tr>
+<tr><td>L1</td><td>الكابل متوصل؟ اللمبة منورة؟ الـ interface up؟</td><td><code>show ip interface brief</code></td></tr>
+<tr><td>L2</td><td>الـ switch شايف الـ MAC؟ نفس الـ VLAN؟</td><td><code>show mac address-table</code></td></tr>
+<tr><td>L3</td><td>IP/mask/gateway صح؟ فيه route؟</td><td><code>ping</code>, <code>show ip route</code></td></tr>
+<tr><td>L4</td><td>البورت مفتوح؟ ACL/Firewall بيمنع؟</td><td><code>show access-lists</code></td></tr>
+<tr><td>L7</td><td>الخدمة شغالة؟ DNS بيرد؟</td><td>nslookup، المتصفح</td></tr></table>
+<div class="box err"><b class="t">أخطاء شائعة</b><ul>
+<li>الاعتقاد إن OSI هو "اللي بيشتغل" فعلاً: هو نموذج مرجعي، والإنترنت TCP/IP.</li>
+<li>الخلط بين الـ Router والـ Switch من ناحية الطبقة (L3 مقابل L2).</li>
+<li>تسمية كل حاجة Packet: لازم تفرق Frame و Packet و Segment حسب الطبقة.</li>
+<li>الظن إن الطبقة العليا بتعرف تفاصيل اللي تحتها: التطبيق مش بيعرف إنت على Wi-Fi ولا كابل.</li></ul></div>`}
+],
+tryText:'حمّل المثال، اضغط على PC واعمل ping لجهاز في الشبكة التانية من الـ CLI، وبعدين <code>show ip interface brief</code> على الـ Router (L1/L3) و <code>show ip route</code> (L3). حاول تعمل troubleshooting بالترتيب: افصل كابل (L1) وشوف الأثر، بعدين غيّر الـ gateway (L3) وشوف الفرق.',
+quiz:[
+{q:'أنهي طبقة مسؤولة عن الـ IP addressing والـ routing؟',o:['Data Link','Network','Transport','Session'],a:1,e:'الـ Network (L3) هي اللي فيها IP والـ Router.'},
+{q:'الـ PDU في طبقة الـ Data Link اسمها:',o:['Packet','Segment','Frame','Bits'],a:2,e:'L2 = Frame، L3 = Packet، L4 = Segment، L1 = Bits.'},
+{q:'الـ Switch التقليدي بيشتغل في:',o:['Layer 1','Layer 2','Layer 3','Layer 7'],a:1,e:'بيقرأ الـ MAC address، يعني Layer 2.'},
+{q:'أنهي بروتوكول بيضمن وصول البيانات بالترتيب وإعادة المفقود؟',o:['UDP','IP','TCP','ARP'],a:2,e:'TCP موثوق (reliable) عكس UDP.'},
+{q:'عدد طبقات OSI و TCP/IP (النسخة 5 طبقات) على الترتيب:',o:['7 و 4','7 و 5','5 و 7','4 و 7'],a:1,e:'OSI = 7، وTCP/IP العملي بنعلّمه بـ 5 طبقات (أو 4 في المراجع القديمة).'}
+]},
 ];
