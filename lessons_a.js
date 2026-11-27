@@ -161,4 +161,44 @@ quiz:[
 {q:'أنهي بروتوكول بيضمن وصول البيانات بالترتيب وإعادة المفقود؟',o:['UDP','IP','TCP','ARP'],a:2,e:'TCP موثوق (reliable) عكس UDP.'},
 {q:'عدد طبقات OSI و TCP/IP (النسخة 5 طبقات) على الترتيب:',o:['7 و 4','7 و 5','5 و 7','4 و 7'],a:1,e:'OSI = 7، وTCP/IP العملي بنعلّمه بـ 5 طبقات (أو 4 في المراجع القديمة).'}
 ]},
+{id:'datalink',nav:'Data Link: MAC و Switching',ex:'example',
+title:'طبقة الـ Data Link: الـ MAC والـ Frames وإزاي الـ Switch بيفكر',
+sub:'عناوين الـ MAC، شكل الـ Ethernet frame، الفرق بين Hub و Switch، وإزاي الـ Switch بيتعلم لوحده.',
+sections:[
+{html:`<h2>1) مهمة الطبقة التانية</h2>
+<p>الـ IP بيقول "الرسالة دي رايحة للجهاز اللي عنوانه كذا في أي مكان في الدنيا". لكن في آخر الطريق، الـ packet لازم تعدّي على <b>لينك فعلي واحد</b> بين جهازين متجاورين (PC → Switch، Switch → Router...). الـ <b>Data Link layer (L2)</b> مسؤولة عن الخطوة الواحدة دي: تحط الـ packet في <b>Frame</b>، تحدد مين على نفس اللينك هو المستلم بالـ <b>MAC address</b>، وتكتشف لو الـ frame اتبوّظت في السكة.</p>
+<p>تقسيم الشغل:</p><ul><li><b>L3 (IP)</b>: الرحلة الكاملة من طرف لطرف.</li><li><b>L2 (MAC)</b>: كل خطوة (hop) لوحدها.</li></ul>`},
+{html:`<h2>2) الـ MAC Address</h2>
+<p>كل كارت شبكة (NIC) ليه عنوان مادي فريد من <b>48 bit</b>، بنكتبه Hexadecimal: <code>00:1A:2B:3C:4D:5E</code> (6 bytes). اتقسم نصين:</p>
+<table><tr><th>أول 3 bytes</th><th>آخر 3 bytes</th></tr><tr><td><b>OUI</b>: رقم الشركة المصنعة (Cisco, Intel...)</td><td>رقم تسلسلي للكارت من الشركة دي</td></tr></table>
+<ul><li><b>Unicast</b>: جهاز واحد.</li><li><b>Broadcast</b>: <code>FF:FF:FF:FF:FF:FF</code> = كل الأجهزة على الشبكة المحلية.</li><li><b>Multicast</b>: مجموعة أجهزة.</li></ul>
+<p>الفرق بين IP و MAC: الـ MAC بيعرّف "الكارت" على اللينك المحلي (ومش بيتبعت برّه الشبكة المحلية)، والـ IP بيعرّف الجهاز في الشبكة المنطقية الكبيرة وممكن يتغير بسهولة. تشبيه: الـ MAC زي رقم بطاقتك، والـ IP زي عنوانك الحالي.</p>
+<div class="box warn"><b class="t">ملحوظة أمان</b>الـ MAC ممكن يتغير بالبرمجيات (MAC spoofing)، فمتعتمدش عليه كإثبات هوية.</div>`},
+{html:`<h2>3) شكل الـ Ethernet Frame</h2>
+<pre>| Preamble | Dest MAC | Src MAC | Type | Payload (46–1500 B) | FCS |
+|  8 B     |   6 B    |  6 B    | 2 B  |  (IP packet)        | 4 B |</pre>
+<ul><li><b>Dest MAC / Src MAC</b>: لمين ومن مين على اللينك ده.</li><li><b>Type</b>: إيه جوّا (0x0800 = IPv4، 0x0806 = ARP).</li><li><b>Payload</b>: الـ packet بتاعة L3 (أقصى 1500 byte = الـ MTU).</li><li><b>FCS</b> (Frame Check Sequence): checksum من نوع CRC. لو الحساب مطابقش، الـ frame بتتمسح بصمت (L2 مش بيعيد الإرسال؛ TCP هو اللي بيعيد).</li></ul>`},
+{html:`<h2>4) Hub مقابل Switch</h2>
+<p><b>Hub</b> (L1): غبي. أي frame داخلة على منفذ بتتكرر على كل المنافذ. كل الأجهزة على الـ Hub في <b>Collision Domain</b> واحد: لو اتنين بعتوا مع بعض، الإشارات بتتصادم. الحل القديم كان <b>CSMA/CD</b> (اسمع قبل ما تتكلم، ولو حصل تصادم استنى وقت عشوائي وأعد). كفاءة ضعيفة وأمان أضعف (الكل بيسمع الكل).</p>
+<p><b>Switch</b> (L2): ذكي. كل منفذ = Collision Domain لوحده (و Full-duplex: إرسال واستقبال في نفس الوقت)، فمفيش collisions عملياً. وبيحتفظ بجدول اسمه <b>MAC address table</b> (أو CAM table).</p>
+<h3>خوارزمية الـ Switch (4 خطوات)</h3>
+<ol><li><b>Learning:</b> لما frame تدخل، يقرأ الـ Source MAC ويسجل "الـ MAC ده ورا المنفذ ده".</li><li><b>Flooding:</b> لو الـ Dest MAC <b>مش في الجدول</b> (unknown unicast) أو broadcast، يبعت الـ frame على <b>كل المنافذ ما عدا اللي جت منه</b>.</li><li><b>Forwarding:</b> لو الـ Dest في الجدول، يبعتها للمنفذ ده بس.</li><li><b>Filtering:</b> لو الـ Dest ورا نفس المنفذ اللي جت منه، يتجاهلها.</li></ol>
+<p>وكل entry بتتمسح بعد فترة خمول (aging، عادةً 300 ثانية).</p>`},
+{html:`<h2>5) جرّب الـ Switch بنفسك</h2>
+<p>الـ Switch ده فيه 4 أجهزة (A, B, C, D) على المنافذ 1 لـ 4. جدول الـ MAC فاضي. اختار مرسل ومستقبل واضغط إرسال. شوف إزاي بيتعلم ومتى بيعمل Flood. جرّب تبعت من A لـ B (flood)، بعدين من B لـ A (unicast مباشر!).</p>`,widget:'mac'},
+{html:`<h2>6) Broadcast Domain وليه الـ VLAN والـ Router مهمين</h2>
+<p>الـ Switch بيقسّم الـ <b>collision domains</b> لكن <b>مش</b> بيقسّم الـ <b>broadcast domain</b>: أي broadcast (زي ARP request) بتوصل لكل الأجهزة على الـ Switch وكل الـ Switches المتوصلة بيه. لو الشبكة كبرت (مئات الأجهزة)، الـ broadcasts بتكتر وتبطّأ الشبكة. اللي بيقسّم الـ broadcast domain:</p>
+<ul><li><b>Router</b>: كل interface = broadcast domain.</li><li><b>VLAN</b>: بيقسّم Switch واحد لعدة شبكات منطقية منفصلة (درس VLAN).</li></ul>
+<table><tr><th>الجهاز</th><th>Collision domains</th><th>Broadcast domains</th></tr><tr><td>Hub بـ 4 أجهزة</td><td>1</td><td>1</td></tr><tr><td>Switch بـ 4 أجهزة</td><td>4</td><td>1</td></tr><tr><td>Router بـ 3 interfaces</td><td>3</td><td>3</td></tr></table>
+<div class="box err"><b class="t">أخطاء شائعة</b><ul><li>اعتقاد إن الـ Switch بيقرأ الـ IP (الـ L2 Switch لأ).</li><li>اعتقاد إن الـ unicast بتتبعت لكل الأجهزة: بتتفلود بس لو الـ MAC مجهول.</li><li>نسيان إن الـ MAC بيتغير مع كل hop لما الـ packet تعدّي Router.</li><li>الخلط بين Collision و Broadcast domain.</li></ul></div>
+<div class="box sim"><b class="t">في المحاكي</b>افتح CLI على أي Switch واكتب <code>show mac address-table</code>. هتلاقي الجدول فاضي لو محدش بعت حاجة، بعدين اعمل ping بين PCs وكرر الأمر: هتشوف الـ Switch اتعلّم.</div>`}
+],
+tryText:'حمّل المثال، افتح CLI على الـ Switch واكتب <code>show mac address-table</code> (الأرجح فاضي)، اعمل ping من PC لـ PC تاني في نفس الشبكة، وارجع نفّذ الأمر تاني: لاحظ إزاي الـ Switch اتعلّم الـ MAC addresses والمنافذ.',
+quiz:[
+{q:'لما الـ Switch يستقبل frame وعنوان الوجهة مش في الجدول:',o:['بيمسحها','بيعمل Flood على كل المنافذ ما عدا اللي جت منه','بيبعتها للـ Router','بيطلب من المرسل يعيد'],a:1,e:'Unknown unicast = Flooding.'},
+{q:'الـ Switch بيتعلم الـ MAC من:',o:['الـ Destination MAC','الـ Source MAC','الـ IP','الـ FCS'],a:1,e:'بيسجل الـ Source MAC والمنفذ اللي جت منه.'},
+{q:'كام Collision Domain في Switch بـ 8 أجهزة؟',o:['1','2','8','16'],a:2,e:'كل منفذ = collision domain لوحده.'},
+{q:'الـ Broadcast MAC address هو:',o:['00:00:00:00:00:00','FF:FF:FF:FF:FF:FF','AA:AA:AA:AA:AA:AA','127.0.0.1'],a:1,e:'كل الـ bits = 1.'},
+{q:'اللي بيحصل لو الـ FCS مش مطابق:',o:['الـ frame بتتعدّل','الـ Switch بيطلب إعادة','الـ frame بتتمسح','بتتبعت broadcast'],a:2,e:'L2 بيرمي الـ frame التالفة، والإعادة مسؤولية الطبقات الأعلى (TCP).'}
+]},
 ];
