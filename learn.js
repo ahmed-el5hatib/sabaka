@@ -128,7 +128,23 @@ function route(root){
    $('#rR').innerHTML=best<0?'<b>مفيش route:</b> الـ packet بتتمسح (Destination unreachable).':`<b>القرار:</b> الراوتر هيبعتها ${R[best][2]} لأن /${R[best][1]} هي أطول prefix متطابق.`;};
   $('#rI').oninput=upd;upd();
 }
-const WID={calc,topo,chunk,osi,mac,arp,vlan,route};
+
+function dv(root){
+  root.innerHTML='<div class="calc"><div class="row"><label>cost اللينك المباشر R1–R4: <b id="dC">100</b></label><input type="range" id="dR" min="1" max="100" value="100"></div><svg id="dS" viewBox="0 0 400 190" style="width:100%;max-width:460px;display:block;margin:auto"></svg><div id="dX"></div></div>';
+  const P={R1:[40,95],R2:[140,35],R3:[260,35],R4:[360,95]};
+  const upd=()=>{const c=+$('#dR').value;$('#dC').textContent=c;const ospfDirect=c<30,tie=c===30;
+   const line=(a,b,col,w,lbl)=>`<line x1="${P[a][0]}" y1="${P[a][1]}" x2="${P[b][0]}" y2="${P[b][1]}" stroke="${col}" stroke-width="${w}"/>`+(lbl?`<text x="${(P[a][0]+P[b][0])/2}" y="${(P[a][1]+P[b][1])/2-6}" fill="#7e8fb3" font-size="11" text-anchor="middle">${lbl}</text>`:'');
+   let s='';const rip='#37e1ff',osp='#ffa94d';
+   s+=line('R1','R4',ospfDirect?osp:'#22304d',ospfDirect?4:2,'cost '+c);
+   [['R1','R2'],['R2','R3'],['R3','R4']].forEach(([a,b])=>s+=line(a,b,ospfDirect?'#22304d':osp,ospfDirect?2:4,'10'));
+   s+=`<line x1="40" y1="108" x2="360" y2="108" stroke="${rip}" stroke-width="2" stroke-dasharray="5 4" opacity=".8"/>`;
+   for(const k in P)s+=`<rect x="${P[k][0]-22}" y="${P[k][1]-14}" width="44" height="28" rx="7" fill="#0e1524" stroke="#3ddc97" stroke-width="2"/><text x="${P[k][0]}" y="${P[k][1]+5}" fill="#dbe6ff" font-size="13" text-anchor="middle">${k}</text>`;
+   s+=`<text x="200" y="170" fill="${rip}" font-size="12" text-anchor="middle">خط متقطع أزرق = اختيار RIP (hop واحد)</text><text x="200" y="186" fill="${osp}" font-size="12" text-anchor="middle">برتقالي = اختيار OSPF</text>`;
+   $('#dS').innerHTML=s;
+   $('#dX').innerHTML=`<p><b>RIP:</b> بيختار اللينك المباشر دايماً (1 hop أقل من 3 hops) حتى لو بطيء جداً.</p><p><b>OSPF:</b> المباشر cost ${c} مقابل 10+10+10 = 30 → ${ospfDirect?'بيختار <b>المباشر</b> لأنه أرخص.':tie?'تعادل: ممكن يوزّع الحمل (ECMP).':'بيختار الطريق <b>الأطول (3 hops)</b> لأن مجموعه 30 أقل من '+c+'.'}</p>`;};
+  $('#dR').oninput=upd;upd();
+}
+const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
