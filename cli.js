@@ -224,6 +224,14 @@ export function complete(d,line){
 export function exec(net,d,line){
   const s=sess(d); const out=[]; const res={out,steps:[],tag:null}; const raw=line.trim(); if(!raw) return res;
   if(raw==='?'||raw.endsWith('?')){ help(d,raw.slice(0,-1)).forEach(x=>out.push(x)); return res; }
+  const pm=raw.match(/^(.*?)\s*\|\s*(include|exclude|begin|section|count)\s*(.*)$/i);
+  if(pm){ const r=exec(net,d,pm[1]); s.hist.pop(); s.hist.push(raw); const mode=pm[2].toLowerCase(), pat=pm[3].trim(); let rx; try{ rx=new RegExp(pat,'i'); }catch(e){ rx=new RegExp(pat.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'); }
+    let o=r.out;
+    if(mode==='include') o=o.filter(l=>rx.test(l)); else if(mode==='exclude') o=o.filter(l=>!rx.test(l));
+    else if(mode==='begin'){ const i=o.findIndex(l=>rx.test(l)); o=i<0?[]:o.slice(i); }
+    else if(mode==='section'){ const res2=[]; let on=false; o.forEach(l=>{ if(!/^\s/.test(l)&&l!=='!') on=rx.test(l); if(on) res2.push(l); }); o=res2; }
+    else if(mode==='count'){ o=['Number of lines which match regexp = '+o.filter(l=>rx.test(l)).length]; }
+    r.out.length=0; o.forEach(l=>r.out.push(l)); return r; }
   s.hist.push(raw);
   let toks=raw.split(/\s+/); let defs=defsFor(d,s);
   const run=(toks,defs,top)=>{
