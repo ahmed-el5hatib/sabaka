@@ -93,6 +93,19 @@ export class Net {
       if(pub){ this.natLog(d,sip,pub,proto,dip,'PAT'); return pub; } }
     return null; }
   natLog(d,inside,outside,proto,dst,kind){ if(this._q) return; const t=d.nat.trans=d.nat.trans||[]; const e=t.find(x=>x.inside===inside&&x.outside===outside&&x.dst===dst&&x.proto===proto); if(e){ e.hits++; return; } t.push({inside,outside,dst,proto,kind,hits:1}); if(t.length>30) t.shift(); }
+  // OSPF (area واحدة): link-state — كل الراوترات في نفس الـ component بتعرف الـ topology، وSPF (Dijkstra) بيحسب الأقل cost
+  ospfIfs(d){ const o=d.ospf; if(!o||!o.on) return []; return this.l3(d).filter(i=>i.ip&&i.mask&&i.up&&i.link&&(o.networks||[]).some(n=>((ip2n(i.ip)^ip2n(n.ip))>>>0&(~ip2n(n.wc)>>>0))===0)); }
+  ospfTable(){
+    const R=this.devices.filter(d=>d.type==='router'&&d.ospf&&d.ospf.on); const T={}; if(!R.length) return T;
+    const cost=i=>(i.phys||i).ospfCost||1; const adj={}; R.forEach(d=>adj[d.id]=[]);
+    for(const A of R) for(const li of this.ospfIfs(A)){ if((A.ospf.passive||[]).includes((li.phys||li).name)) continue; for(const ep of this.l2reach(A,li.phys||li,li.vlan||null)){ const B=ep.dev; if(B===A||!adj[B.id]) continue; const bi=this.ospfIfs(B).find(x=>(x.phys||x)===ep.iface&&(!x.phys||x.vlan===ep.vlan)&&same(x.ip,li.ip,li.mask)&&!(B.ospf.passive||[]).includes((x.phys||x).name)); if(bi) adj[A.id].push({to:B,out:li,nh:bi.ip,c:cost(li)}); } }
+    const nets=d=>this.ospfIfs(d).map(i=>({net:n2ip(netOf(i.ip,i.mask)),mask:i.mask,c:cost(i)}));
+    for(const A of R){ const dist={[A.id]:0}, first={}, done=new Set(); T[A.id]={};
+      for(let k=0;k<R.length;k++){ let u=null; for(const d of R) if(!done.has(d.id)&&dist[d.id]!==undefined&&(u===null||dist[d.id]<dist[u.id])) u=d; if(!u) break; done.add(u.id);
+        for(const e of adj[u.id]){ const nd=dist[u.id]+e.c; if(dist[e.to.id]===undefined||nd<dist[e.to.id]){ dist[e.to.id]=nd; first[e.to.id]=u===A?e:first[u.id]; } } }
+      const own=new Set(nets(A).map(x=>x.net+'/'+x.mask));
+      for(const B of R){ if(B===A||dist[B.id]===undefined) continue; for(const n of nets(B)){ const key=n.net+'/'+n.mask; if(own.has(key)) continue; const m=dist[B.id]+n.c; const cur=T[A.id][key]; if(!cur||m<cur.metric){ const f=first[B.id]; T[A.id][key]={net:n.net,mask:n.mask,metric:m,out:f.out,nh:f.nh,outKey:f.out.name}; } } } }
+    return T; }
   // RIP v2 (distance-vector، hop count، max 15، split horizon) — بيتحسب من الـ topology الحالية
   ripNets(d){ const r=d.rip; if(!r||!r.on) return []; const cl=ip=>{ const f=+ip.split('.')[0]; return n2ip(netOf(ip,f<128?'255.0.0.0':f<192?'255.255.0.0':'255.255.255.0')); };
     return this.l3(d).filter(i=>i.ip&&i.mask&&i.up&&i.link&&(r.networks||[]).some(n=>n===cl(i.ip)||n===n2ip(netOf(i.ip,i.mask)))); }
@@ -108,8 +121,9 @@ export class Net {
     for(const i of this.l3(d)){ if(i.ip&&i.mask&&i.up&&i.link&&same(i.ip,dst,i.mask)) cand.push({len:maskLen(i.mask),out:i,nh:dst,kind:'C'}); }
     if(d.type==='router'||true){ for(const r of d.routes){ const o=this.ifaceTo(d,r.nh); if(o&&same(r.net,dst,r.mask)) cand.push({len:maskLen(r.mask),out:o,nh:r.nh,kind:'S'}); } }
     if(d.type==='router'&&d.rip&&d.rip.on){ const t=this.ripTable()[d.id]||{}; for(const e of Object.values(t)){ if(!e.own&&same(e.net,dst,e.mask)) cand.push({len:maskLen(e.mask),out:e.out,nh:e.nh,kind:'R'}); } }
+    if(d.type==='router'&&d.ospf&&d.ospf.on){ const t=this.ospfTable()[d.id]||{}; for(const x of Object.values(t)){ if(same(x.net,dst,x.mask)) cand.push({len:maskLen(x.mask),out:x.out,nh:x.nh,kind:'O'}); } }
     if(d.type!=='router'&&d.gateway){ const o=this.ifaceTo(d,d.gateway); if(o) cand.push({len:-1,out:o,nh:d.gateway,kind:'G'}); }
-    const rk={C:0,S:1,R:2,G:3}; cand.sort((a,b)=>b.len-a.len||rk[a.kind]-rk[b.kind]); return cand[0]||null;
+    const rk={C:0,S:1,O:2,R:3,G:4}; cand.sort((a,b)=>b.len-a.len||rk[a.kind]-rk[b.kind]); return cand[0]||null;
   }
   ifaceTo(d,nh){ return this.l3(d).find(i=>i.ip&&i.mask&&i.up&&i.link&&same(i.ip,nh,i.mask)); }
   // يرسل IP packet من src الى dstIp. proto: 'icmp'|'udp'. يرجع {ok,reason,hops:[{dev}],steps,at}
