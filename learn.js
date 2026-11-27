@@ -43,7 +43,15 @@ function topo(root){
   $('#tb').innerHTML=Object.keys(T).map(k=>`<button class="btn2 ghost" data-k="${k}">${T[k].n}</button>`).join('');
   $('#tb').onclick=e=>{const b=e.target.closest('button');if(b)draw(b.dataset.k);};draw('star');
 }
-const WID={calc,topo};
+
+function chunk(root){
+  root.innerHTML='<div class="calc"><div class="row"><label>حجم الملف (KB): <input type="text" id="kF" value="3000" style="max-width:120px"></label><label>Bandwidth (Mbps): <input type="text" id="kB" value="100" style="max-width:100px"></label></div><div class="row"><label>MTU: <b id="kML">1500</b> byte</label><input type="range" id="kM" min="576" max="9000" step="1" value="1500"></div><div class="bar" id="kBar"></div><dl id="kO"></dl></div>';
+  const u=()=>{const F=Math.max(0,+$('#kF').value||0)*1000,B=Math.max(0.001,+$('#kB').value||1),M=+$('#kM').value;$('#kML').textContent=M;const pay=M-40,n=Math.ceil(F/pay),oh=n*(40+18),tot=F+oh;
+   $('#kBar').innerHTML=`<i class="n" style="width:${F/tot*100}%"></i><i class="h" style="width:${oh/tot*100}%"></i>`;
+   $('#kO').innerHTML=`<dt>Payload لكل packet</dt><dd>${pay} byte (MTU − 40)</dd><dt>عدد الـ Packets</dt><dd>${n}</dd><dt>Overhead (IP+TCP+Eth)</dt><dd>${oh} byte (${(oh/tot*100).toFixed(1)}%)</dd><dt>زمن الإرسال النظري</dt><dd>${(tot*8/(B*1e6)).toFixed(3)} s</dd>`;};
+  ['kF','kB','kM'].forEach(i=>$('#'+i).oninput=u);u();
+}
+const WID={calc,topo,chunk};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
