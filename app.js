@@ -241,6 +241,7 @@ const CH=[
  {t:'RIP',d:'وصّل 3 راوترات ورا بعض مع PC على الطرفين (زر RIP بيجهزهم). شغّل router rip على كل راوتر (network ...) من غير ولا static route، وخلّي الـ ping بين الـ PCs ينجح.',f:()=>net.devices.filter(d=>d.type==='router'&&d.rip&&d.rip.on&&!(d.routes||[]).length).length>=3&&pairs().some(([x,y])=>{const r=quiet(x,y);return r&&r.ok&&r.hops.filter(h=>h.type==='router').length>=3;})},
  {t:'ACL',d:'زر ACL بيجهز راوتر وPCين وسيرفر. اكتب access-list يمنع PC1 (192.168.1.10) من السيرفر، وطبّقها بـ ip access-group على بورت الراوتر، وPC2 يفضل يوصل للسيرفر.',f:()=>net.devices.some(r=>r.type==='router'&&Object.values(r.acls||{}).some(x=>x.rules.some(q=>q.act==='deny')))&&net.devices.some(s=>s.type==='server'&&net.primaryIp(s)&&hosts().filter(h=>h.type==='pc'&&net.primaryIp(h)).some(h=>!quiet(h,s)?.ok)&&hosts().filter(h=>h.type==='pc'&&net.primaryIp(h)).some(h=>quiet(h,s)?.ok))},
  {t:'NAT / PAT',d:'زر NAT بيجهز شبكة داخلية (192.168.1.0/24) وراوتر وISP وسيرفر. الـ ping من PC للسيرفر بيفشل لأن الـ ISP ميعرفش الشبكة الداخلية. اعمل access-list وip nat inside source list ... interface ... overload وخلّي الـ ping ينجح (والسيرفر يشوف عنوان الراوتر).',f:()=>net.devices.some(r=>r.type==='router'&&r.nat&&((r.nat.rules||[]).length||(r.nat.statics||[]).length))&&hosts().filter(h=>h.type==='pc').some(h=>net.devices.filter(s=>s.type==='server').some(s=>{const q=quiet(h,s);return q&&q.ok&&q.nat;}))},
+ {t:'OSPF',d:'زر OSPF بيجهز 4 راوترات في مربع. على كل راوتر: router ospf 1 ثم network 10.0.0.0 0.255.255.255 area 0 و network 192.168.0.0 0.0.255.255 area 0. بعدين غيّر ip ospf cost على بورت وشوف المسار (traceroute) بيتغير.',f:()=>net.devices.filter(d=>d.type==='router'&&d.ospf&&d.ospf.on&&!(d.routes||[]).length).length>=3&&pairs().some(([x,y])=>{const r=quiet(x,y);return r&&r.ok&&r.hops.filter(h=>h.type==='router').length>=3;})},
  {t:'CLI بأسلوب IOS',d:'من الـ CLI بتاع الراوتر: اكتب enable ثم configure terminal، افتح interface، ادي IP بـ ip address، وبعدين اعمل ping من PC لعنوان الراوتر ويرد.',f:()=>!!achieved['ios-ip']&&!!achieved['ping-ok']},
 ];
 let chDone=new Set();
@@ -288,6 +289,17 @@ function natExample(){
   cfg(r,['int g0/0','ip address 192.168.1.1 255.255.255.0','ip nat inside','no shutdown','int g0/1','ip address 203.0.113.1 255.255.255.0','ip nat outside','no shutdown','ip route 0.0.0.0 0.0.0.0 203.0.113.2']);
   cfg(isp,['int g0/0','ip address 203.0.113.2 255.255.255.0','no shutdown','int g0/1','ip address 198.51.100.1 255.255.255.0','no shutdown']);
   const R=(d,l)=>runCli(n,d,l); R(a,'ip set 192.168.1.10 255.255.255.0 192.168.1.1'); R(b,'ip set 192.168.1.11 255.255.255.0 192.168.1.1'); R(s,'ip set 198.51.100.10 255.255.255.0 198.51.100.1'); return n.toJSON(); }
+$('#bOspf').onclick=()=>{ loadNet(ospfExample()); toast('مثال: 4 راوترات في مربع — OSPF بيختار أقل cost'); };
+function ospfExample(){
+  const n=new Net(); const r=[n.add('router',-7,-4,'R1'),n.add('router',0,-8,'R2'),n.add('router',0,0,'R3'),n.add('router',7,-4,'R4')];
+  const a=n.add('pc',-11,0,'PC1'), b=n.add('pc',11,0,'PC4');
+  n.connect(r[0].id,r[1].id); n.connect(r[1].id,r[3].id); n.connect(r[0].id,r[2].id); n.connect(r[2].id,r[3].id); n.connect(a.id,r[0].id); n.connect(b.id,r[3].id);
+  const X=(d,l)=>iosExec(n,d,l); const cfg=(d,ls)=>{ X(d,'enable'); X(d,'conf t'); ls.forEach(l=>X(d,l)); X(d,'end'); };
+  cfg(r[0],['int g0/0','ip address 10.0.12.1 255.255.255.0','no shutdown','int g0/1','ip address 10.0.13.1 255.255.255.0','no shutdown','int g0/2','ip address 192.168.1.1 255.255.255.0','no shutdown']);
+  cfg(r[1],['int g0/0','ip address 10.0.12.2 255.255.255.0','no shutdown','int g0/1','ip address 10.0.24.2 255.255.255.0','no shutdown']);
+  cfg(r[2],['int g0/0','ip address 10.0.13.3 255.255.255.0','no shutdown','int g0/1','ip address 10.0.34.3 255.255.255.0','no shutdown']);
+  cfg(r[3],['int g0/0','ip address 10.0.24.4 255.255.255.0','no shutdown','int g0/1','ip address 10.0.34.4 255.255.255.0','no shutdown','int g0/2','ip address 192.168.4.1 255.255.255.0','no shutdown']);
+  const R=(d,l)=>runCli(n,d,l); R(a,'ip set 192.168.1.10 255.255.255.0 192.168.1.1'); R(b,'ip set 192.168.4.10 255.255.255.0 192.168.4.1'); return n.toJSON(); }
 function vlanExample(){
   const n=new Net(); const sw=n.add('switch',0,2,'SW1'), r=n.add('router',0,-3,'R1');
   const p=[n.add('pc',-6,4,'PC1'),n.add('pc',-3,5,'PC2'),n.add('pc',3,5,'PC3'),n.add('pc',6,4,'PC4')];
@@ -325,5 +337,5 @@ function frame(){
 // init
 try{ const s=localStorage.getItem('sabaka'); net=s?Net.from(JSON.parse(s)):Net.from(example()); }catch(e){ net=Net.from(example()); }
 if(!net.devices.length) net=Net.from(example());
-window.__net=()=>net; window.__app={natExample,aclExample,ripExample,stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
+window.__net=()=>net; window.__app={ospfExample,natExample,aclExample,ripExample,stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
 syncScene(); renderInsp(); renderChal(); renderLog(); fit(); frame();
