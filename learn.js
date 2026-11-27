@@ -51,7 +51,29 @@ function chunk(root){
    $('#kO').innerHTML=`<dt>Payload لكل packet</dt><dd>${pay} byte (MTU − 40)</dd><dt>عدد الـ Packets</dt><dd>${n}</dd><dt>Overhead (IP+TCP+Eth)</dt><dd>${oh} byte (${(oh/tot*100).toFixed(1)}%)</dd><dt>زمن الإرسال النظري</dt><dd>${(tot*8/(B*1e6)).toFixed(3)} s</dd>`;};
   ['kF','kB','kM'].forEach(i=>$('#'+i).oninput=u);u();
 }
-const WID={calc,topo,chunk};
+
+function osi(root){
+  const Ls=[[7,'Application','الخدمات اللي المستخدم/البرنامج بيتعامل معاها مباشرة: طلب صفحة، إرسال إيميل، ترجمة اسم.','HTTP, HTTPS, DNS, DHCP, SMTP, FTP, SSH','Data','المتصفح، السيرفر'],
+  [6,'Presentation','شكل وتمثيل البيانات: ترميز (UTF-8)، ضغط، تشفير (TLS).','TLS/SSL, JPEG, ASCII/UTF-8','Data','—'],
+  [5,'Session','فتح وإدارة وإنهاء الجلسات (حوار بين طرفين).','NetBIOS, RPC, sessions','Data','—'],
+  [4,'Transport','توصيل بيانات من برنامج لبرنامج: ports، ترقيم، موثوقية (TCP) أو سرعة (UDP).','TCP, UDP','Segment','Firewall (L4)'],
+  [3,'Network','عنونة منطقية (IP) واختيار الطريق بين شبكات مختلفة.','IP, ICMP, OSPF, RIP','Packet','Router, L3 Switch'],
+  [2,'Data Link','توصيل frame بين جهازين على نفس اللينك: MAC، كشف الأخطاء.','Ethernet, Wi-Fi 802.11, ARP*, STP, VLAN 802.1Q','Frame','Switch, Bridge, NIC'],
+  [1,'Physical','نقل الـ bits كإشارات: جهد كهربي، ضوء، راديو، شكل الكونكتور.','RJ-45, Fiber, 1000BASE-T','Bits','Hub, Cable, Repeater']];
+  const H=['HTTP','TCP','IP','Eth'];
+  root.innerHTML='<div class="calc"><div id="oL" style="display:grid;gap:6px"></div><div id="oX" style="margin-top:12px"></div></div>';
+  const cols=['#a77bff','#a77bff','#a77bff','#ff5d73','#ffa94d','#3ddc97','#37e1ff'];
+  const pick=i=>{const [n,nm,desc,pr,pdu,dev]=Ls[i];
+   document.querySelectorAll('#oL button').forEach((b,j)=>{b.style.outline=j===i?'2px solid #fff':'none';});
+   let st='';const layers=n>=5?[['Data (HTTP)',cols[0]]]:[];
+   const stack=[['HTTP data','#a77bff']];if(n<=4)stack.unshift(['TCP hdr','#ff5d73']);if(n<=3)stack.unshift(['IP hdr','#ffa94d']);if(n<=2)stack.unshift(['Eth hdr','#3ddc97']);
+   const tr=n<=2?[['FCS','#3ddc97']]:[];
+   const parts=n===1?['<span style="direction:ltr;font-family:monospace;color:#37e1ff;letter-spacing:2px">0101 1100 1010 0011 ...</span>']:[...stack,...tr].map(([t,c])=>`<span style="background:${c}22;border:1px solid ${c};color:${c};padding:4px 10px;border-radius:7px;font-family:monospace;font-size:13px">${t}</span>`);
+   $('#oX').innerHTML=`<h3>Layer ${n}: ${nm}</h3><p>${desc}</p><p><b>أمثلة بروتوكولات:</b> <span class="ltr">${pr}</span></p><p><b>الـ PDU:</b> ${pdu} &nbsp; <b>الأجهزة:</b> ${dev}</p><div style="direction:ltr;display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${parts.join('')}</div>`;};
+  $('#oL').innerHTML=Ls.map(([n,nm],i)=>`<button class="btn2 ghost" data-i="${i}" style="text-align:start;border-right:6px solid ${cols[i]}">${n} &nbsp; ${nm}</button>`).join('');
+  $('#oL').onclick=e=>{const b=e.target.closest('button');if(b)pick(+b.dataset.i);};pick(3);
+}
+const WID={calc,topo,chunk,osi};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
