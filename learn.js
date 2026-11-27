@@ -155,7 +155,15 @@ function acl(root){
    const act=hit<0?'deny':R[hit][0];$('#xV').innerHTML=`<b>القرار:</b> <span style="color:${act==='permit'?'#3ddc97':'#ff5d73'}">${act==='permit'?'PERMIT (يعدّي)':'DENY (يتمنع)'}</span>${hit<0?' (بسبب الـ implicit deny)':''}`;};
   ['xS','xD','xP','xT'].forEach(i=>$('#'+i).oninput=upd);upd();
 }
-const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv,acl};
+
+function nat(root){
+  root.innerHTML='<div class="calc"><div class="row"><label>الجهاز: <select id="nH"><option>192.168.1.10</option><option>192.168.1.11</option><option>192.168.1.12</option></select></label><button class="btn2" id="nG">اتصال جديد</button><button class="btn2 ghost" id="nR">تصفير</button></div><table id="nT"></table><p id="nM" style="color:var(--mut)"></p></div>';
+  let rows=[],port=1024,src=51000;
+  const draw=()=>{$('#nT').innerHTML='<tr><th>Inside local</th><th>Inside global</th><th>Outside</th></tr>'+(rows.length?rows.map(r=>`<tr><td class="ltr">${r[0]}</td><td class="ltr" style="color:#ffa94d">${r[1]}</td><td class="ltr">93.184.216.34:80</td></tr>`).join(''):'<tr><td colspan=3>(الجدول فاضي)</td></tr>');
+   $('#nM').textContent=rows.length?`${rows.length} اتصال بيطلعوا كلهم من عنوان public واحد 41.1.1.1 والتمييز بالـ port.`:'';};
+  $('#nG').onclick=()=>{rows.push([$('#nH').value+':'+(src++),'41.1.1.1:'+(port++)]);draw();};$('#nR').onclick=()=>{rows=[];port=1024;src=51000;draw();};draw();
+}
+const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv,acl,nat};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
