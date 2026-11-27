@@ -32,11 +32,32 @@ export class Net {
   removeLink(id){ const l=this.links.find(x=>x.id===id); if(!l) return; for(const e of [l.a,l.b]){const d=this.dev(e.dev); if(d){const i=this.iface(d,e.if); if(i)i.link=null;}} this.links=this.links.filter(x=>x!==l); }
   removeDevice(id){ for(const l of [...this.links]) if(l.a.dev===id||l.b.dev===id) this.removeLink(l.id); this.devices=this.devices.filter(d=>d.id!==id); }
   peer(d,i){ if(!i.link) return null; const l=this.links.find(x=>x.id===i.link); if(!l) return null; const e=(l.a.dev===d.id&&l.a.if===i.name)?l.b:l.a; const nd=this.dev(e.dev); return {dev:nd,iface:this.iface(nd,e.if),link:l}; }
+  // STP (instance واحدة لكل الـ VLANs — تبسيط): root election + root/designated/blocked
+  bid(d){ return {p:d.stpPrio??32768, m:d.ifaces[0].mac}; }
+  bcmp(a,b){ return a.p!==b.p?a.p-b.p:(a.m<b.m?-1:a.m>b.m?1:0); }
+  stp(){
+    const sw=this.devices.filter(d=>d.type==='switch'&&d.stpOn!==false); const roles={}; if(!sw.length) return {root:null,roles,cost:{}};
+    const links=this.links.filter(l=>{ const a=this.dev(l.a.dev),b=this.dev(l.b.dev); if(!sw.includes(a)||!sw.includes(b)) return false; return this.iface(a,l.a.if).up&&this.iface(b,l.b.if).up; });
+    const root=sw.reduce((m,d)=>this.bcmp(this.bid(d),this.bid(m))<0?d:m);
+    const cost={}; sw.forEach(d=>cost[d.id]=Infinity); cost[root.id]=0;
+    for(let k=0;k<sw.length;k++) for(const l of links){ const a=l.a.dev,b=l.b.dev; if(cost[a]+4<cost[b]) cost[b]=cost[a]+4; if(cost[b]+4<cost[a]) cost[a]=cost[b]+4; }
+    const rootPort={};
+    for(const d of sw){ if(d===root||cost[d.id]===Infinity) continue; let best=null;
+      for(const l of links){ const me=l.a.dev===d.id?l.a:(l.b.dev===d.id?l.b:null); if(!me) continue; const o=me===l.a?l.b:l.a; const nb=this.dev(o.dev); if(cost[o.dev]+4!==cost[d.id]) continue;
+        const cand={me,o,nb}; if(!best||this.bcmp(this.bid(nb),this.bid(best.nb))<0||(this.bcmp(this.bid(nb),this.bid(best.nb))===0&&o.if<best.o.if)) best=cand; }
+      if(best) rootPort[d.id]=best.me.if; }
+    for(const d of sw) for(const i of d.ifaces){ if(i.link&&i.up&&!links.some(l=>l.id===i.link)) roles[d.id+'|'+i.name]='designated'; }
+    for(const l of links){ const A=this.dev(l.a.dev),B=this.dev(l.b.dev);
+      const win=(cost[A.id]!==cost[B.id])?(cost[A.id]<cost[B.id]?A:B):(this.bcmp(this.bid(A),this.bid(B))<=0?A:B);
+      for(const [d,ifn] of [[A,l.a.if],[B,l.b.if]]){ const k=d.id+'|'+ifn; if(d===win) roles[k]='designated'; else roles[k]=(rootPort[d.id]===ifn)?'root':'blocked'; } }
+    return {root,roles,cost};
+  }
+  blocked(d,i){ if(d.type!=='switch'||d.stpOn===false) return false; return (this._stp||this.stp()).roles[d.id+'|'+i.name]==='blocked'; }
   // L2: يرجع كل النهايات (non-switch) اللي توصلها الفريم + المسار
   l2reach(src,iface,vlan=null){
-    const out=[]; const seen=new Set();
+    const out=[]; const seen=new Set(); this._stp=this.stp();
     const walk=(from,fi,v,path,via)=>{
-      const p=this.peer(from,fi); if(!p||!fi.up||!p.iface.up) return;
+      const p=this.peer(from,fi); if(!p||!fi.up||!p.iface.up) return; if(this.blocked(from,fi)||this.blocked(p.dev,p.iface)) return;
       const nd=p.dev, ni=p.iface;
       if(nd.type!=='switch'){ out.push({dev:nd,iface:ni,vlan:v,path:[...path,nd.id],via}); return; }
       let vv=v; if(ni.mode==='access'){ vv=ni.vlan; } else if(v==null) vv=1;
@@ -44,10 +65,10 @@ export class Net {
       const key=nd.id+ni.name+vv; if(seen.has(key)) return; seen.add(key);
       for(const oi of nd.ifaces){ if(oi===ni||!oi.link) continue; if(oi.mode==='access'&&oi.vlan!==vv) continue; if(oi.mode==='trunk'&&!okAllowed(oi,vv)) continue; walk(nd,oi,oi.mode==='trunk'?vv:null,[...path,nd.id],[...via,{dev:nd,in:ni.name,out:oi.name,vlan:vv}]); }
     };
-    walk(src,iface,vlan,[src.id],[]); return out;
+    walk(src,iface,vlan,[src.id],[]); this._stp=null; return out;
   }
   // نقط دخول الـ vlan: لما host يتوصل بـ access port الـ vlan هي vlan البورت
-  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length) for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up}); else o.push(i); } return o; }
+  l3(d){ const o=[]; for(const i of d.ifaces){ if(i.subs&&i.subs.length){ for(const sb of i.subs) if(sb.vlan) o.push({name:i.name+'.'+(sb.id??sb.vlan),phys:i,vlan:sb.vlan,ip:sb.ip,mask:sb.mask,mac:i.mac,link:i.link,up:i.up}); } else o.push(i); } return o; }
   epIf(r){ const i=r.iface; if(i.subs&&i.subs.length){ return this.l3(r.dev).find(x=>x.phys===i&&x.vlan===r.vlan)||null; } return i; }
   owner(ip){ for(const d of this.devices) for(const i of this.l3(d)) if(i.ip===ip) return {d,i}; return null; }
   arpResolve(d,out,nh,steps){
