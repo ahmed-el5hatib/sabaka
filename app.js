@@ -250,12 +250,17 @@ function renderChal(ev){ if(ev) CH.forEach((c,i)=>{ let ok=false; try{ok=!!c.f()
 
 // ---------- persistence ----------
 function save(){ try{localStorage.setItem('sabaka',JSON.stringify(net.toJSON()));}catch(e){} }
-function changed(light){ syncScene(); if(!light||true) renderInsp(); renderChal(); save(); }
+function routeSnap(){ const s={}; try{ const o=net.ospfTable(), r=net.ripTable(); for(const d of net.devices){ if(d.type!=='router') continue; const m={}; for(const [k,x] of Object.entries(o[d.id]||{})) m[k]=`${x.ia?'O IA':'O'} via ${x.nh} [${x.metric}]`; for(const [k,x] of Object.entries(r[d.id]||{})) if(!x.own&&!m[k]) m[k]=`R via ${x.nh} [${x.metric}]`; s[d.name]=m; } }catch(e){} return s; }
+let prevSnap=routeSnap(), convT=null;
+const kfmt=k=>{ const [n,m]=k.split('/'); return n+'/'+(m||'').split('.').reduce((s,o)=>s+(+o).toString(2).replace(/0/g,'').length,0); };
+function convDiff(){ const cur=routeSnap(), rows=[]; if(!prevSnap){ prevSnap=cur; return rows; } for(const n of Object.keys(prevSnap)){ const A=prevSnap[n], B=cur[n]; if(!B) continue; for(const k of new Set([...Object.keys(A),...Object.keys(B)])){ if(A[k]===B[k]) continue; if(A[k]&&!B[k]) rows.push({c:'#ff5d73',t:`${n}: فقد route ${kfmt(k)} (كان ${A[k]})`}); else if(!A[k]&&B[k]) rows.push({c:'#3ddc97',t:`${n}: اتعلّم route ${kfmt(k)} ${B[k]}`}); else rows.push({c:'#ffa94d',t:`${n}: ${kfmt(k)} اتغيّر من ${A[k]} إلى ${B[k]}`}); } } prevSnap=cur; return rows; }
+function showConv(rows){ let el=document.getElementById('conv'); if(!el){ el=document.createElement('div'); el.id='conv'; document.body.appendChild(el); } clearTimeout(convT); const shown=rows.slice(0,12); el.className='show'; el.innerHTML='<b>إعادة تقارب الـ routing</b> <span class="mut">(عرض بصري: المحاكي بيحسب فوراً، مش مؤقتات حقيقية)</span><div id="convRows"></div>'; let i=0; const step=()=>{ if(i<shown.length){ const r=shown[i++]; $('#convRows').insertAdjacentHTML('beforeend',`<div class="crow" style="border-color:${r.c}">${esc(r.t)}</div>`); logs.unshift({k:'arp',t:'تقارب: '+r.t}); logs.length=Math.min(logs.length,80); convT=setTimeout(step,550); } else { if(rows.length>shown.length) $('#convRows').insertAdjacentHTML('beforeend',`<div class="crow mut">... و${rows.length-shown.length} تغيير تاني</div>`); renderLog(); convT=setTimeout(()=>el.className='',6000); } }; step(); }
+function changed(light){ syncScene(); if(!light||true) renderInsp(); renderChal(); save(); const rows=convDiff(); if(rows.length) showConv(rows); }
 $('#bSave').onclick=()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(net.toJSON(),null,1)],{type:'application/json'})); a.download='topology.sabaka.json'; a.click(); };
 $('#bLoad').onclick=()=>$('#file').click();
 $('#file').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ loadNet(JSON.parse(await f.text())); toast('تم فتح الـ topology'); }catch(x){ toast('ملف غير صالح',true);} };
 $('#bClear').onclick=()=>{ if(!net.devices.length||confirm('تمسح كل حاجة؟')){ loadNet(new Net().toJSON()); } };
-function loadNet(o){ chDone=new Set(); for(const id of Object.keys(nodes)){ scene.remove(nodes[id]); labels[id].forEach(e=>e.remove()); delete nodes[id]; delete labels[id]; } for(const id of Object.keys(linkMeshes)){ scene.remove(linkMeshes[id]); delete linkMeshes[id]; } net=Net.from(o); setTimeout(fit,0); selected=null; selLink=null; for(const k in hist) delete hist[k]; $('#term').classList.add('hidden'); changed(); }
+function loadNet(o){ prevSnap=null; chDone=new Set(); for(const id of Object.keys(nodes)){ scene.remove(nodes[id]); labels[id].forEach(e=>e.remove()); delete nodes[id]; delete labels[id]; } for(const id of Object.keys(linkMeshes)){ scene.remove(linkMeshes[id]); delete linkMeshes[id]; } net=Net.from(o); setTimeout(fit,0); selected=null; selLink=null; for(const k in hist) delete hist[k]; $('#term').classList.add('hidden'); changed(); }
 $('#bVlan').onclick=()=>{ loadNet(vlanExample()); toast('مثال: VLAN + router-on-a-stick'); };
 $('#bExample').onclick=()=>{ loadNet(example()); toast('مثال: شبكتين + Router + DHCP/DNS'); };
 $('#bStp').onclick=()=>{ loadNet(stpExample()); toast('مثال: 3 switches في لفّة — STP بيقفل لينك'); };
@@ -337,7 +342,7 @@ function frame(){
 // init
 try{ const s=localStorage.getItem('sabaka'); net=s?Net.from(JSON.parse(s)):Net.from(example()); }catch(e){ net=Net.from(example()); }
 if(!net.devices.length) net=Net.from(example());
-window.__net=()=>net; window.__app={ospfExample,natExample,aclExample,ripExample,stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
+window.__net=()=>net; window.__app={changed,delLink:id=>{net.removeLink(id);changed();},ospfExample,natExample,aclExample,ripExample,stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
 syncScene(); renderInsp(); renderChal(); renderLog(); fit(); frame();
 
 { const q=new URLSearchParams(location.search).get('ex'); const M={example,vlan:vlanExample,stp:stpExample,rip:ripExample,acl:aclExample,nat:natExample,ospf:ospfExample}; if(q&&M[q]){ loadNet(M[q]()); } }
