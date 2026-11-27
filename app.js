@@ -251,7 +251,7 @@ $('#bSave').onclick=()=>{ const a=document.createElement('a'); a.href=URL.create
 $('#bLoad').onclick=()=>$('#file').click();
 $('#file').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ loadNet(JSON.parse(await f.text())); toast('تم فتح الـ topology'); }catch(x){ toast('ملف غير صالح',true);} };
 $('#bClear').onclick=()=>{ if(!net.devices.length||confirm('تمسح كل حاجة؟')){ loadNet(new Net().toJSON()); } };
-function loadNet(o){ chDone=new Set(); net=Net.from(o); setTimeout(fit,0); selected=null; selLink=null; for(const k in hist) delete hist[k]; $('#term').classList.add('hidden'); changed(); }
+function loadNet(o){ chDone=new Set(); for(const id of Object.keys(nodes)){ scene.remove(nodes[id]); labels[id].forEach(e=>e.remove()); delete nodes[id]; delete labels[id]; } for(const id of Object.keys(linkMeshes)){ scene.remove(linkMeshes[id]); delete linkMeshes[id]; } net=Net.from(o); setTimeout(fit,0); selected=null; selLink=null; for(const k in hist) delete hist[k]; $('#term').classList.add('hidden'); changed(); }
 $('#bVlan').onclick=()=>{ loadNet(vlanExample()); toast('مثال: VLAN + router-on-a-stick'); };
 $('#bExample').onclick=()=>{ loadNet(example()); toast('مثال: شبكتين + Router + DHCP/DNS'); };
 $('#bStp').onclick=()=>{ loadNet(stpExample()); toast('مثال: 3 switches في لفّة — STP بيقفل لينك'); };
