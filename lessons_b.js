@@ -214,7 +214,7 @@ R1(config-if)# ip ospf cost 50   ! تغيير الـ cost يدوي</pre>
 <li>Router ID مكرر في OSPF.</li></ul></div>
 <div class="box warn"><b class="t">في المحاكي</b>الـ convergence هنا فوري (مش بنحاكي المؤقتات)، وOSPF بيدعم multi-area (area 0 + areas تانية عن طريق ABR، والـ routes اللي بتعدّي بين الـ areas بتظهر <code>O IA</code> في show ip route). مفيش virtual links ولا stub/NSSA. ده تبسيط للتعليم، مش بيعكس تأخير الشبكات الحقيقية.</div>`}
 ],
-tryText:'اضغط زر OSPF في المحاكي (4 راوترات في مربع). افتح R1 و <code>show ip route</code> وشوف الـ O routes. بعدين على interface اعمل <code>ip ospf cost 100</code> وشوف الطريق اتغير في <code>traceroute</code>. جرّب كمان زر RIP وقارن الجدول (R بدل O).',
+tryText:'اضغط زر OSPF في المحاكي (4 راوترات في مربع). افتح R1 و <code>show ip route</code> وشوف الـ O routes. بعدين على interface اعمل <code>ip ospf cost 100</code> وشوف الطريق اتغير في <code>traceroute</code>. جرّب كمان زر RIP وقارن الجدول (R بدل O). للـ multi-area: خلّي رابط في <code>area 0</code> وراوتر تاني على area 1 (<code>network 10.0.24.0 0.0.0.255 area 1</code>) وشوف الـ routes اللي بتعدّي بين الـ areas بحرف <code>O IA</code>.',
 quiz:[
 {q:'الـ Metric في RIP هو:',o:['Bandwidth','Hop count','Delay','Cost'],a:1,e:'RIP بيعدّ الـ hops بس.'},
 {q:'أقصى hops في RIP قبل ما يعتبر الهدف unreachable:',o:['10','15','16 مسموح','255'],a:1,e:'15 hops أقصى، و16 = infinity.'},
@@ -273,7 +273,7 @@ R1(config-ext-nacl)# permit ip any any</pre>
 <li>نسيان ترافيك الرد: ACL بدون state (stateless) فلازم تسمح بالراجع (أو تستخدم established).</li></ul></div>
 <h3>التشخيص</h3><p><code>show access-lists</code> بيعرض كل قاعدة وعدّاد كام packet اتطابقت معاها (matches). بعد ما تعمل ping أو traffic، شوف أنهي سطر زاد عدّاده: ده السطر اللي اتنفّذ.</p>`}
 ],
-tryText:'اضغط زر ACL في المحاكي، افتح الراوتر و <code>show access-lists</code>. اعمل ping وجرّب traffic من الأجهزة وراقب العدّاد (matches). بعدين جرّب <code>no ip access-group</code> وشوف الترافيك المحجوب بيعدّي.',
+tryText:'اضغط زر ACL في المحاكي، افتح الراوتر و <code>show access-lists</code>. اعمل ping وجرّب traffic من الأجهزة وراقب العدّاد (matches). بعدين جرّب <code>no ip access-group</code> وشوف الترافيك المحجوب بيعدّي. وتقدر تختبر TCP حقيقي من PC بالأمر <code>tcp &lt;server-ip&gt; 80</code> (بيورّيك SYN و SYN-ACK و ACK): اعمل <code>access-list 101 deny tcp any any eq 80</code> و <code>access-list 101 permit ip any any</code> وطبّقها <code>ip access-group 101 in</code> وشوف الـ SYN بيتمنع والـ ping لسه شغال.',
 quiz:[
 {q:'ACL فيها سطر <code>deny</code> واحد بس. النتيجة؟',o:['بتمنع السطر ده بس','بتمنع كل حاجة بسبب implicit deny','بتسمح بكل حاجة','بتتجاهل'],a:1,e:'implicit deny any في آخر كل ACL.'},
 {q:'الـ wildcard لـ 192.168.1.0/24:',o:['255.255.255.0','0.0.0.255','0.0.0.0','255.0.0.0'],a:1,e:'عكس الـ mask.'},
@@ -441,7 +441,7 @@ sections:[
 <li><b>عنوان 169.254:</b> مفيش DHCP وصل له.</li></ul></div>
 <p>اتأكد من فهمك بالـ try-it والكويز اللي تحت.</p>`}
 ],
-tryText:'اضغط "مثال". على السيرفر اظبط DHCP و DNS بالأوامر اللي فوق. على PC1 اكتب dhcp وبعدين ipconfig وشوف الـ IP والـ gateway والـ DNS. بعدين dns-add لاسم جديد وجرّب nslookup و ping بالاسم. وجرّب تمسح الـ DNS من PC (ip dns بـ IP غلط) وشوف ping بالاسم بيفشل وبالـ IP بيشتغل.',
+tryText:'اضغط "مثال". على السيرفر اظبط DHCP و DNS بالأوامر اللي فوق. على PC1 اكتب dhcp وبعدين ipconfig وشوف الـ IP والـ gateway والـ DNS. بعدين dns-add لاسم جديد وجرّب nslookup و ping بالاسم. وجرّب تمسح الـ DNS من PC (ip dns بـ IP غلط) وشوف ping بالاسم بيفشل وبالـ IP بيشتغل. وجرّب الـ relay: على السيرفر اظبط pool في شبكة PC1 (<code>dhcp-server 192.168.1.100 20 192.168.1.1 192.168.2.5</code>)، وعلى PC اكتب <code>dhcp</code> (هيفشل)، وبعدين على الـ Router في interface بتاع PC: <code>ip helper-address 192.168.2.5</code> وارجع جرّب <code>dhcp</code>. وجرّب <code>tcp 192.168.2.5 80</code> من PC عشان تشوف الـ handshake.',
 quiz:[
 {q:'ترتيب خطوات DHCP:',o:['Discover, Offer, Request, Ack','Request, Offer, Discover, Ack','Offer, Discover, Ack, Request','Discover, Request, Offer, Ack'],a:0,e:'DORA.'},
 {q:'ليه Discover بيتبعت broadcast؟',o:['عشان أسرع','الجهاز لسه معندوش IP ومش عارف السيرفر','عشان الأمان','بروتوكول TCP'],a:1,e:'Src 0.0.0.0 و Dst 255.255.255.255.'},
