@@ -49,4 +49,63 @@ quiz:[
 {q:'في Star topology لو الـ Switch المركزي وقع:',o:['جهاز واحد بس يقع','الشبكة كلها تقع','مفيش تأثير','بس الـ Server'],a:1,e:'الـ Switch هو نقطة الفشل الوحيدة (Single point of failure).'},
 {q:'أكتر وسيط بيتحمل مسافات طويلة ومش بيتأثر بالتشويش الكهربي:',o:['UTP','Wi-Fi','Fiber','Coaxial'],a:2,e:'الـ Fiber بينقل ضوء فمش بيتأثر بالكهرباء ويوصل كيلومترات.'}
 ]},
+{id:'data-travel',nav:'إزاي البيانات بتسافر؟',ex:'example',
+title:'إزاي البيانات بتسافر؟ Packets و Encapsulation و Delay',
+sub:'هتفهم ليه البيانات بتتقطع حتت صغيرة، وإيه اللي بيتحط على كل حتة، وإيه اللي بياخد وقت في الرحلة.',
+sections:[
+{html:`<h2>1) فكرة الـ Packet Switching</h2>
+<p>لما تبعت صورة حجمها 3 MB لصاحبك، الصورة <b>مش</b> بتتبعت كقطعة واحدة. بتتقسم لآلاف الحتت الصغيرة، وكل حتة اسمها <b>Packet</b> (في الـ Data Link بنقول عليها Frame، وفي الـ Transport اسمها Segment؛ هنفرق في درس الـ Models). ليه التقسيم ده؟</p>
+<ul><li><b>المشاركة:</b> لو كل واحد بعت ملفه كله مرة واحدة، لينك واحد هيتحجز لحد ما يخلص. مع الحتت الصغيرة، packets ناس كتير بتتبادل على نفس اللينك (<b>Statistical multiplexing</b>).</li>
+<li><b>تصحيح الأخطاء:</b> لو حتة ضاعت أو اتبوّظت، بنعيد الحتة دي بس، مش الملف كله.</li>
+<li><b>المرونة:</b> كل packet ممكن تاخد طريق مختلف لو فيه عطل.</li></ul>
+<p>ده عكس الـ <b>Circuit switching</b> (زي التليفون الأرضي القديم): الدايرة بتتحجز بالكامل طول المكالمة حتى لو ساكتين. الإنترنت كله Packet switching.</p>
+<div class="box tip"><b class="t">تشبيه</b>تخيّل بتنقل شقة: بدل ما تدور على عربية نقل ضخمة، بتوزع الأثاث على عربيات صغيرة، كل واحدة ممكن تاخد طريق، وفي الآخر بتتجمع وترتبها. لازم كل صندوق يكتب عليه "ده صندوق رقم كام من كام" عشان يتجمع صح.</div>`},
+{html:`<h2>2) إيه جوّا الـ Packet؟ Header + Payload</h2>
+<p>كل packet من جزئين أساسيين:</p>
+<ul><li><b>Payload</b>: البيانات الفعلية (حتة من الصورة مثلاً).</li><li><b>Header</b>: "الورقة اللي ملزوقة على الصندوق": مين المرسل، مين المستلم، رقم الحتة، حجمها، نوع البروتوكول... وأحياناً <b>Trailer</b> في الآخر فيه <b>checksum/FCS</b> عشان نتأكد إن الحتة وصلت سليمة.</li></ul>
+<p>أهم معلومات في الـ header اللي الشبكة بتعتمد عليها:</p>
+<table><tr><th>الحقل</th><th>معناه</th><th>بيستخدمه مين؟</th></tr>
+<tr><td>Source / Destination <b>MAC</b></td><td>مين لمين على اللينك المحلي</td><td>Switch</td></tr>
+<tr><td>Source / Destination <b>IP</b></td><td>مين لمين من طرف لطرف</td><td>Router</td></tr>
+<tr><td>Source / Destination <b>Port</b></td><td>أنهي برنامج (Web = 80/443)</td><td>الجهاز نفسه</td></tr>
+<tr><td><b>TTL</b></td><td>أقصى عدد راوترات تعدّي عليها</td><td>Router</td></tr></table>
+<h3>الـ TTL ليه موجود؟</h3><p>لو فيه حلقة في الشبكة (loop) الـ packet كانت هتلف للأبد. فكل Router بينقص الـ TTL بواحد، ولما يوصل صفر بيتمسح الـ packet وبيرجع رسالة <code>Time Exceeded</code>. الأمر <code>traceroute</code> بيستغل الفكرة دي ذكياً: بيبعت packets بـ TTL=1 ثم 2 ثم 3...، وكل Router في الطريق بيرد، فتعرف الطريق كله.</p>
+<div class="box sim"><b class="t">في المحاكي</b>افتح CLI على أي PC واعمل <code>traceroute</code> لـ IP في الشبكة التانية: هتشوف كل hop في سطر. وبص على الـ animation: الـ packet بتتنقل جهاز جهاز.</div>`},
+{html:`<h2>3) الـ Encapsulation: لفّة بعد لفّة</h2>
+<p>البيانات بتعدّي على طبقات برمجية، وكل طبقة <b>بتلف</b> اللي جاي من اللي فوقها بالـ header بتاعها (وأحياناً trailer). ده اسمه <b>Encapsulation</b>. والمستقبل بيفك اللفّات بالترتيب العكسي: <b>De-encapsulation</b>. (هنمشي على الطبقات واحدة واحدة في الدرس الجاي.)</p>
+<p>مثال مبسّط: Browser عايز يبعت طلب "GET /index.html":</p>
+<pre>[ HTTP data ]                                   ← التطبيق
+[ TCP hdr | HTTP data ]                         ← بورتس (Segment)
+[ IP hdr  | TCP hdr | HTTP data ]               ← IPs (Packet)
+[ Eth hdr | IP hdr | TCP hdr | HTTP data | FCS ] ← MACs (Frame)
+→ bits على الكابل: 0101101...</pre>
+<p>لاحظ إن الـ Switch بيقرأ الـ Ethernet header بس، والـ Router بيفك الـ Ethernet ويقرأ الـ IP ثم يلف الـ packet بـ Ethernet header جديد للـ hop الجاي. يعني <b>الـ IP بيفضل ثابت طول الطريق، والـ MAC بيتغير في كل hop</b>. دي أهم جملة في الدرس ده.</p>`},
+{html:`<h2>4) جرّب: بيتقسم لكام Packet؟</h2>
+<p>أقصى حجم payload في Ethernet عادةً <b>1500 byte</b> (اسمها <b>MTU</b>). والـ headers (IP 20 + TCP 20 = 40 byte) بتاخد جزء منها. حاسبة بتورّيك عدد الـ packets والـ overhead وزمن الإرسال النظري:</p>`,widget:'chunk'},
+{html:`<h2>5) الوقت اللي الـ Packet بتصرفه: 4 أنواع Delay</h2>
+<p>كل hop بيضيف وقت. الـ latency الكلي = مجموع:</p>
+<table><tr><th>النوع</th><th>معناه</th><th>الصيغة</th></tr>
+<tr><td><b>Transmission</b></td><td>الوقت لحد ما كل bits الـ packet تتحط على اللينك</td><td class="ltr">L / R</td></tr>
+<tr><td><b>Propagation</b></td><td>وقت سفر الإشارة في الكابل</td><td class="ltr">d / s</td></tr>
+<tr><td><b>Processing</b></td><td>الجهاز بيقرأ الـ header ويقرر</td><td>ميكروثواني</td></tr>
+<tr><td><b>Queuing</b></td><td>الانتظار في الطابور لو اللينك مشغول</td><td>متغير</td></tr></table>
+<h3>مثال محلول</h3>
+<p>Packet حجمها 1500 byte = 12000 bit، اللينك 100 Mbps، المسافة 2000 km على Fiber (سرعة الإشارة ≈ 2×10<sup>8</sup> m/s).</p>
+<pre>Transmission = 12000 / 100,000,000 = 0.00012 s = 0.12 ms
+Propagation  = 2,000,000 / 200,000,000 = 0.01 s  = 10 ms</pre>
+<p>الـ propagation أكبر بكتير! يعني لو عايز تقلل الـ latency لسيرفر بعيد، زيادة الـ bandwidth مش هتفرق كتير. لازم سيرفر أقرب (وده سبب فكرة الـ CDN).</p>
+<div class="box warn"><b class="t">ملحوظة</b>الـ ping بيقيس <b>RTT</b> (Round-Trip Time) أي رايح وجاي، يعني تقريباً ضعف الـ one-way delay.</div>
+<h3>Store-and-forward</h3><p>الـ Switch والـ Router بيستقبلوا الـ frame كله، يتأكدوا من الـ checksum، وبعدين يبعتوه. فكل hop بيضيف transmission delay كامل. وإن لقى الـ buffer ممتلئ بيرمي الـ packet (<b>Packet loss</b>)، ودي أشهر أسباب إن الـ TCP يبطّأ.</p>`},
+{html:`<h2>6) رحلة كاملة: PC1 بيفتح موقع</h2>
+<ol><li>التطبيق يجهّز الطلب، والـ OS يقسمه لو كبير.</li><li>يلفّه بـ TCP ثم IP (الوجهة = IP السيرفر).</li><li>PC1 يشوف إن السيرفر <b>برّه شبكته</b> (بيقارن بالـ mask) فيبعت لـ Default Gateway: يلف الـ frame بـ MAC الـ Router.</li><li>الـ Switch يقرأ الـ MAC ويوصّل الـ frame للـ Router بس.</li><li>الـ Router يفك الـ Ethernet، يشوف الـ IP، ينقص TTL، يدوّر في Routing table، ويلف الـ packet بـ frame جديد للـ hop التالي.</li><li>يتكرر لحد السيرفر، اللي يفك كل اللفّات ويسلّم الطلب للـ Web server.</li><li>الرد بيرجع نفس الرحلة بالعكس (مش لازم نفس الطريق).</li></ol>
+<div class="box err"><b class="t">أخطاء شائعة</b><ul><li>اعتقاد إن الـ MAC address بيوصل من طرف لطرف: لا، بيتغير في كل hop.</li><li>الخلط بين Packet و Frame و Segment: نفس البيانات بس بأسماء حسب الطبقة.</li><li>تفسير ping عالي دايماً بإنه "النت ضعيف": ممكن يكون مسافة (propagation) مش سرعة.</li><li>نسيان الـ overhead: الـ 1 Gbps مش بتديك 1 Gbps من الملفات فعلاً.</li></ul></div>`}
+],
+tryText:'حمّل المثال، افتح CLI على PC من الشبكة الأولى واعمل traceroute لجهاز في الشبكة التانية. عدّ الـ hops، وراقب الـ animation: لاحظ إن الـ packet بتتوقف عند الـ Router. غيّر سرعة الـ animation بالسلايدر فوق لو عايز تشوف كل خطوة.',
+quiz:[
+{q:'إيه اللي <b>بيتغير</b> في كل hop؟',o:['الـ Source IP','الـ Destination IP','الـ MAC addresses','الـ Port'],a:2,e:'الـ IP بيفضل ثابت (إلا مع NAT)، والـ MAC بيتغير على كل لينك.'},
+{q:'ليه فيه TTL في الـ IP header؟',o:['عشان السرعة','عشان الـ packet ماتلفّش للأبد لو فيه loop','عشان التشفير','عشان الـ MAC'],a:1,e:'كل Router بينقصه 1، ولما يوصل 0 الـ packet بتتمسح.'},
+{q:'ملف 3000 byte payload، وكل packet تشيل 1460 byte. كام packet؟',o:['2','3','4','1'],a:1,e:'3000 ÷ 1460 = 2.05 → 3 packets (الأخيرة صغيرة).'},
+{q:'أنهي delay مش بتقلله بزيادة الـ bandwidth؟',o:['Transmission','Queuing','Propagation','Processing'],a:2,e:'الـ propagation مرتبطة بالمسافة وسرعة الإشارة، مش بسعة اللينك.'},
+{q:'الـ Switch بيقرأ في الـ frame:',o:['الـ MAC بس تقريباً','الـ IP والـ port','الـ HTTP','الـ DNS'],a:0,e:'الـ Switch بيشتغل في الـ Data Link فبيهتم بالـ MAC.'}
+]},
 ];
