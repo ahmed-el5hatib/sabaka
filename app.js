@@ -17,7 +17,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,matchMedia('(max-width:900px)')
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.15;
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x060a12); scene.fog=new THREE.Fog(0x060a12,26,60);
 const camera=new THREE.PerspectiveCamera(42,1,0.1,200); camera.position.set(0,16,16);
-const controls=new OrbitControls(camera,canvas); controls.enableDamping=true; controls.maxPolarAngle=Math.PI*0.47; controls.minDistance=5; controls.maxDistance=40; controls.target.set(0,0,0);
+const controls=new OrbitControls(camera,canvas); controls.enableDamping=true; controls.maxPolarAngle=Math.PI*0.47; controls.minDistance=5; controls.maxDistance=95; controls.target.set(0,0,0);
 controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.DOLLY,RIGHT:THREE.MOUSE.PAN}; controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};
 scene.add(new THREE.HemisphereLight(0x8fb4ff,0x0a1020,0.9));
 const sun=new THREE.DirectionalLight(0xffffff,2.2); sun.position.set(8,16,6); sun.castShadow=true; sun.shadow.mapSize.set(matchMedia('(max-width:900px)').matches?1024:2048,matchMedia('(max-width:900px)').matches?1024:2048);
@@ -129,7 +129,7 @@ function startNext(){
   if(batchActive<=0) startNext();
 }
 function flash(d){ const g=nodes[d.id]; if(!g) return; g.userData.flash=performance.now(); toast('✖ '+(batches.reason||'الباكت وقع عند '+d.name),true); }
-function fit(){ if(!net.devices.length) return; let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; net.devices.forEach(d=>{x0=Math.min(x0,d.x);x1=Math.max(x1,d.x);z0=Math.min(z0,d.z);z1=Math.max(z1,d.z);}); const cx=(x0+x1)/2,cz=(z0+z1)/2,ext=Math.max(x1-x0,(z1-z0)*1.6,6); resize(); const dist=Math.min(48,(ext*.8/Math.max(.55,camera.aspect*.55)+3)*(camera.aspect<.8?1.35:1.18)); controls.target.set(cx,0,cz); camera.position.set(cx,dist*.62,cz+dist*.78); }
+function fit(){ if(!net.devices.length) return; let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; net.devices.forEach(d=>{x0=Math.min(x0,d.x);x1=Math.max(x1,d.x);z0=Math.min(z0,d.z);z1=Math.max(z1,d.z);}); const cx=(x0+x1)/2,cz=(z0+z1)/2,ext=Math.max(x1-x0,(z1-z0)*1.6,6); resize(); const nar=camera.aspect<.8; const dist=Math.min(nar?60:48,(ext*.8/Math.max(nar?.3:.55,camera.aspect*.55)+3)*(nar?1.1:1.18)); controls.target.set(cx,0,cz); camera.position.set(cx,dist*.62,cz+dist*.78); }
 let topv=false; $('#bView').onclick=()=>{ topv=!topv; fit(); if(topv){camera.position.y*=1.6;camera.position.z=controls.target.z+1;} };
 
 // ---------- terminal ----------
