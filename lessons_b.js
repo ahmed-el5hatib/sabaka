@@ -173,5 +173,53 @@ quiz:[
 {q:'Ping بيوصل ومفيش رد. السبب الأرجح؟',o:['الـ mask كبير','مفيش return route','الكابل بايظ','الـ DNS'],a:1,e:'الراوتر الأبعد معندوش طريق للرجوع للمصدر.'},
 {q:'أنهي AD أفضل (أقل)؟',o:['OSPF 110','RIP 120','Static 1','Floating static 200'],a:2,e:'الـ Static بـ 1، والـ Connected بـ 0.'},
 {q:'الـ next-hop في static route لازم يكون:',o:['أي IP في الإنترنت','في شبكة متوصلة مباشرة بالـ Router','IP الراوتر نفسه','MAC address'],a:1,e:'الراوتر لازم يقدر يعمل ARP للـ next-hop.'}
+]},
+dynamic:{id:'dynamic',nav:'Routing: RIP و OSPF',ex:'ospf',
+title:'Dynamic Routing: RIP و OSPF',
+sub:'ليه الـ Static مش كفاية، إزاي الراوترات بتتكلم مع بعض وتتعلم الطرق، والفرق بين Distance-Vector و Link-State.',
+sections:[
+{html:`<h2>1) المشكلة مع الـ Static</h2>
+<p>في شبكة فيها 50 راوتر، لو لينك وقع محتاج حد يدخل ويغيّر routes في راوترات كتير بإيده. وكل شبكة جديدة = تعديل في كل راوتر. الحل: الراوترات تتكلم مع بعض وتتبادل معلومات عن الشبكات اللي تعرفها، فتبني جداول routing <b>لوحدها</b> وتتأقلم مع الأعطال. ده اسمه <b>Dynamic Routing</b> وبروتوكولاته (RIP, OSPF, EIGRP, BGP).</p>
+<p>أي routing protocol لازم يجاوب على:</p><ul><li>مين <b>جيراني</b> (Neighbors)؟</li><li>إيه الشبكات اللي أعرفها وأقولها لهم؟</li><li>لو في أكتر من طريق، أنهي <b>أحسن</b> (الـ <b>Metric</b>)؟</li><li>إزاي أعرف لما حاجة تتغير وأوصّلها بسرعة (<b>Convergence</b>)؟</li></ul>
+<p><b>Convergence</b> هو الوقت اللي كل الراوترات تتفق فيه على صورة الشبكة بعد تغيير. أقل = أحسن.</p>`},
+{html:`<h2>2) RIP: Distance-Vector بسيط</h2>
+<p><b>RIP (Routing Information Protocol)</b> أبسط بروتوكول. فكرة "الإشاعة": كل راوتر بيقول لجيرانه "أنا أعرف الشبكات دي وبعدها كذا hops". الجار بيزوّد 1 ويبعتها للي بعده.</p>
+<ul><li><b>Metric = Hop count</b> (عدد الراوترات في الطريق). الأقل يكسب، من غير ما يهتم بسرعة اللينك.</li><li><b>أقصى 15 hop</b>، و16 = unreachable.</li><li>بيبعت جدوله كله كل <b>30 ثانية</b> للجيران (RIPv2 بـ multicast 224.0.0.9).</li><li>بطيء في الـ convergence، وعرضة لـ <b>Routing loops</b> (بيحاربها بـ <b>split horizon</b>: ما ترجّعش للجار معلومة جت منه، و <b>poison reverse</b>).</li><li>AD = 120.</li></ul>
+<pre>R1(config)# router rip
+R1(config-router)# version 2
+R1(config-router)# network 192.168.1.0
+R1(config-router)# network 10.0.0.0</pre>
+<p>أمر <code>network</code> هنا معناه: "فعّل RIP على أي interface عنوانه ضمن الشبكة دي، واعلن عنها".</p>`},
+{html:`<h2>3) OSPF: Link-State</h2>
+<p><b>OSPF (Open Shortest Path First)</b> بيشتغل بطريقة مختلفة: كل راوتر بيعمل "خريطة" كاملة للشبكة:</p>
+<ol><li><b>Neighbors:</b> الراوترات تكتشف بعض بـ Hello packets (multicast 224.0.0.5) وتكوّن علاقة (adjacency).</li><li><b>LSAs:</b> كل راوتر بيعلن حالة لينكاته (Link-State Advertisements) وبتتوزع على الكل.</li><li>كل راوتر عنده نفس قاعدة البيانات <b>LSDB</b>، يعني نفس الخريطة.</li><li>كل راوتر يشغّل خوارزمية <b>Dijkstra (SPF)</b> بنفسه ويحسب أقصر طريق لكل شبكة وهو "الجذر".</li></ol>
+<ul><li><b>Metric = Cost</b> = (Reference bandwidth ÷ bandwidth اللينك). افتراضياً 100 Mbps ÷ سرعة اللينك: لينك 100 Mbps = cost 1، لينك 10 Mbps = cost 10. يعني بيفضّل الطرق السريعة.</li><li>بيبعت تحديثات <b>لما يحصل تغيير بس</b> (مش كل 30 ثانية)، فـ convergence أسرع كتير.</li><li><b>Areas:</b> بيقسّم الشبكة الكبيرة لمناطق (Area 0 = backbone) عشان يقلل حجم الـ LSDB.</li><li>AD = 110.</li></ul>
+<pre>R1(config)# router ospf 1
+R1(config-router)# network 10.0.0.0 0.255.255.255 area 0
+R1(config-router)# network 192.168.1.0 0.0.0.255 area 0
+R1(config-if)# ip ospf cost 50   ! تغيير الـ cost يدوي</pre>
+<p>لاحظ إن OSPF بيستخدم <b>wildcard mask</b> (عكس الـ mask: 0.0.0.255 معناها /24).</p>`},
+{html:`<h2>4) جرّب: RIP مقابل OSPF بيختاروا إيه؟</h2>
+<p>R1 عايز يوصل R4. فيه طريقين: لينك مباشر (hop واحد) بس سرعته تتحدد بالـ cost اللي تختاره، أو 3 hops كل واحد cost 10 (يعني إجمالي 30). غيّر الـ cost للينك المباشر وشوف الفرق:</p>`,widget:'dv'},
+{html:`<h2>5) مقارنة سريعة وأخطاء شائعة</h2>
+<table><tr><th></th><th>RIP</th><th>OSPF</th></tr>
+<tr><td>النوع</td><td>Distance-Vector</td><td>Link-State</td></tr><tr><td>Metric</td><td>Hops</td><td>Cost (bandwidth)</td></tr>
+<tr><td>التحديث</td><td>كل 30 ث (الجدول كله)</td><td>عند التغيير بس</td></tr><tr><td>Convergence</td><td>بطيء</td><td>سريع</td></tr>
+<tr><td>الحد الأقصى</td><td>15 hop</td><td>مفيش (بيتقسّم Areas)</td></tr><tr><td>الاستخدام</td><td>شبكات صغيرة/تعليمي</td><td>شبكات الشركات المتوسطة والكبيرة</td></tr></table>
+<div class="box err"><b class="t">أخطاء شائعة</b><ul>
+<li>نسيان <code>network</code> للشبكة المتوصلة: الراوتر مش هيعلن عنها.</li>
+<li>OSPF: الـ wildcard mask غلط، أو area مختلفة على طرفي لينك: الجيران مش هيتكوّنوا.</li>
+<li>الاعتقاد إن أقل hops = أسرع طريق (ده RIP بس).</li>
+<li>تشغيل أكتر من بروتوكول بدون فهم الـ AD: الراوتر هيفضل OSPF (110) على RIP (120).</li>
+<li>Router ID مكرر في OSPF.</li></ul></div>
+<div class="box warn"><b class="t">في المحاكي</b>الـ convergence هنا فوري (مش بنحاكي المؤقتات)، وOSPF بيدعم area واحدة بس حالياً. ده تبسيط للتعليم، مش بيعكس تأخير الشبكات الحقيقية.</div>`}
+],
+tryText:'اضغط زر OSPF في المحاكي (4 راوترات في مربع). افتح R1 و <code>show ip route</code> وشوف الـ O routes. بعدين على interface اعمل <code>ip ospf cost 100</code> وشوف الطريق اتغير في <code>traceroute</code>. جرّب كمان زر RIP وقارن الجدول (R بدل O).',
+quiz:[
+{q:'الـ Metric في RIP هو:',o:['Bandwidth','Hop count','Delay','Cost'],a:1,e:'RIP بيعدّ الـ hops بس.'},
+{q:'أقصى hops في RIP قبل ما يعتبر الهدف unreachable:',o:['10','15','16 مسموح','255'],a:1,e:'15 hops أقصى، و16 = infinity.'},
+{q:'OSPF بيحسب الطريق بخوارزمية:',o:['Bellman-Ford','Dijkstra','RSA','CSMA/CD'],a:1,e:'كل راوتر بيشغّل Dijkstra على الـ LSDB.'},
+{q:'لو نفس الشبكة اتعلمت بـ RIP و OSPF، الراوتر هيستخدم:',o:['RIP','OSPF','الاتنين','أي واحد عشوائي'],a:1,e:'AD لـ OSPF = 110 أقل من RIP = 120.'},
+{q:'ليه OSPF أسرع في الـ convergence؟',o:['بيبعت كل 30 ثانية','بيبعت تحديثات عند حدوث تغيير وكل راوتر عنده الخريطة كاملة','بيعتمد على DNS','لأنه بيستخدم hops'],a:1,e:'Triggered updates + LSDB كاملة.'}
 ]}
 };
