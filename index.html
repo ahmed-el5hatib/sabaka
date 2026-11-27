@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sabaka سباكة 3D — محاكي شبكات تعليمي مفتوح المصدر</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.min.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">⬢</span><b>Sabaka</b><i>3D</i><small>محاكي شبكات مفتوح المصدر</small></div>
+  <div class="tools">
+    <button id="tCable" title="C">كابل</button>
+    <button id="tSelect" class="on" title="V">تحديد</button>
+    <span class="sep"></span>
+    <button id="bView" title="تبديل الزاوية">زاوية</button>
+    <label class="spd">سرعة <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1"></label>
+    <span class="sep"></span>
+    <button id="bExample">مثال</button>
+    <button id="bVlan">VLAN</button>
+    <button id="bSave">حفظ</button>
+    <button id="bLoad">فتح</button>
+    <button id="bClear">مسح</button>
+    <input type="file" id="file" accept=".json" hidden>
+  </div>
+</header>
+<main>
+  <aside id="palette">
+    <h4>الأجهزة</h4>
+    <div class="dev" draggable="true" data-type="pc"><i class="ic pc"></i><span>PC<small>كمبيوتر</small></span></div>
+    <div class="dev" draggable="true" data-type="switch"><i class="ic sw"></i><span>Switch<small>L2 + VLAN</small></span></div>
+    <div class="dev" draggable="true" data-type="router"><i class="ic rt"></i><span>Router<small>L3 + routes</small></span></div>
+    <div class="dev" draggable="true" data-type="server"><i class="ic sv"></i><span>Server<small>DHCP / DNS</small></span></div>
+    <p class="hint">اسحب الجهاز على الساحة أو اضغط عليه. اضغط على جهاز واتنين بأداة الكابل عشان توصلهم. Del للمسح.</p>
+    <div class="legend"><b>ألوان الباكتات</b><span><i style="background:#ffd24d"></i>ARP</span><span><i style="background:#37e1ff"></i>ICMP</span><span><i style="background:#3ddc97"></i>رد</span><span><i style="background:#ff6fb5"></i>DHCP</span><span><i style="background:#b58cff"></i>DNS</span></div>
+  </aside>
+  <section id="stage">
+    <canvas id="c"></canvas>
+    <div id="labels"></div>
+    <div id="toast"></div>
+    <div id="term" class="hidden">
+      <div class="th"><b id="termName"></b><span>CLI — اكتب help</span><button id="termX">✕</button></div>
+      <div id="termOut" dir="ltr"></div>
+      <div class="ti" dir="ltr"><span id="prompt"></span><input id="termIn" autocomplete="off" spellcheck="false"></div>
+    </div>
+  </section>
+  <aside id="side">
+    <nav><button class="on" data-tab="insp">الجهاز</button><button data-tab="chal">التحديات <em id="chalCount"></em></button><button data-tab="log">السجل</button></nav>
+    <div id="insp" class="tab"></div>
+    <div id="chal" class="tab hidden"></div>
+    <div id="log" class="tab hidden"></div>
+  </aside>
+</main>
+<script type="module" src="app.js"></script>
+</body></html>
