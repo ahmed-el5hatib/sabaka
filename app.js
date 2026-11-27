@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {Net,runCli,TYPES,maskLen} from './engine.js';
+import {exec as iosExec,prompt as iosPrompt,help as iosHelp,complete as iosComplete,banner as iosBanner} from './cli.js';
+const isTouch=matchMedia('(pointer:coarse)').matches; const isMobile=()=>matchMedia('(max-width:900px)').matches;
 
 const $=s=>document.querySelector(s);
 let net=new Net(), selected=null, tool='select', cableFrom=null, selLink=null;
@@ -11,14 +13,14 @@ const hist={}, logs=[];
 // ---------- scene ----------
 const canvas=$('#c');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.setPixelRatio(Math.min(devicePixelRatio,matchMedia('(max-width:900px)').matches?1.5:2)); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.15;
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x060a12); scene.fog=new THREE.Fog(0x060a12,26,60);
 const camera=new THREE.PerspectiveCamera(42,1,0.1,200); camera.position.set(0,16,16);
 const controls=new OrbitControls(camera,canvas); controls.enableDamping=true; controls.maxPolarAngle=Math.PI*0.47; controls.minDistance=5; controls.maxDistance=40; controls.target.set(0,0,0);
-controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.DOLLY,RIGHT:THREE.MOUSE.PAN};
+controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.DOLLY,RIGHT:THREE.MOUSE.PAN}; controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};
 scene.add(new THREE.HemisphereLight(0x8fb4ff,0x0a1020,0.9));
-const sun=new THREE.DirectionalLight(0xffffff,2.2); sun.position.set(8,16,6); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
+const sun=new THREE.DirectionalLight(0xffffff,2.2); sun.position.set(8,16,6); sun.castShadow=true; sun.shadow.mapSize.set(matchMedia('(max-width:900px)').matches?1024:2048,matchMedia('(max-width:900px)').matches?1024:2048);
 Object.assign(sun.shadow.camera,{left:-18,right:18,top:18,bottom:-18,near:1,far:50}); sun.shadow.bias=-0.0004; scene.add(sun);
 const rim=new THREE.PointLight(0x37e1ff,40,30); rim.position.set(-8,5,-8); scene.add(rim);
 const rim2=new THREE.PointLight(0xa77bff,30,30); rim2.position.set(9,4,-6); scene.add(rim2);
@@ -84,19 +86,23 @@ function pickDev(e){ setMouse(e); const hits=ray.intersectObjects(Object.values(
 function pickLink(e){ setMouse(e); const h=ray.intersectObjects(Object.values(linkMeshes),false)[0]; return h?h.object.userData.link:null; }
 function groundPt(e){ setMouse(e); const v=new THREE.Vector3(); return ray.ray.intersectPlane(plane,v)?v:null; }
 const snap=v=>Math.round(v*2)/2;
-let drag=null;
+let drag=null, lp=null; const ptrs=new Set();
 canvas.addEventListener('pointerdown',e=>{
+  ptrs.add(e.pointerId); if(ptrs.size>1){ cancelDrag(); return; }
   if(e.button!==0) return; const id=pickDev(e);
   if(tool==='cable'){ if(!id) return; if(!cableFrom){cableFrom=id;toast('اختار الجهاز التاني');} else { const r=net.connect(cableFrom,id); if(r.err) toast(r.err,true); else {toast('تم التوصيل ✔');} cableFrom=null; changed(); } syncScene(); return; }
-  if(id){ select(id); const p=groundPt(e); const d=net.dev(id); drag={id,dx:d.x-p.x,dz:d.z-p.z,moved:false}; controls.enabled=false; canvas.setPointerCapture(e.pointerId); }
-  else { const l=pickLink(e); selLink=l; if(l){ select(null); toast('كابل متحدد — اضغط Del لحذفه'); } else select(null,true); syncScene(); }
+  if(id){ select(id); const p=groundPt(e); const d=net.dev(id); drag={id,dx:d.x-p.x,dz:d.z-p.z,moved:false,sx:e.clientX,sy:e.clientY}; controls.enabled=false; canvas.setPointerCapture(e.pointerId); clearTimeout(lp); if(e.pointerType==='touch') lp=setTimeout(()=>{ if(drag&&!drag.moved){ const i=drag.id; cancelDrag(); if(navigator.vibrate) navigator.vibrate(20); openTerm(i); } },550); }
+  else { const l=pickLink(e); selLink=l; if(l){ select(null); toast(isTouch?'كابل متحدد — احذفه من تبويب الجهاز':'كابل متحدد — اضغط Del لحذفه'); if(isMobile()) setSheet('side'); } else select(null,true); syncScene(); }
 });
-canvas.addEventListener('pointermove',e=>{ if(!drag) return; const p=groundPt(e); if(!p) return; const d=net.dev(drag.id); d.x=Math.max(-20,Math.min(20,snap(p.x+drag.dx))); d.z=Math.max(-20,Math.min(20,snap(p.z+drag.dz))); drag.moved=true; syncScene(); });
-canvas.addEventListener('pointerup',()=>{ if(drag){ if(drag.moved) save(); drag=null; controls.enabled=true; } });
+canvas.addEventListener('pointermove',e=>{ if(!drag) return; if(!drag.moved&&Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)<9) return; clearTimeout(lp); const p=groundPt(e); if(!p) return; const d=net.dev(drag.id); d.x=Math.max(-20,Math.min(20,snap(p.x+drag.dx))); d.z=Math.max(-20,Math.min(20,snap(p.z+drag.dz))); drag.moved=true; syncScene(); });
+function cancelDrag(){ clearTimeout(lp); if(drag){ if(drag.moved) save(); drag=null; } controls.enabled=true; }
+const endPtr=e=>{ ptrs.delete(e.pointerId); cancelDrag(); };
+canvas.addEventListener('pointerup',endPtr); canvas.addEventListener('pointercancel',endPtr);
 canvas.addEventListener('dblclick',e=>{ const id=pickDev(e); if(id&&net.dev(id).type!=='switch'||id) openTerm(id); });
 canvas.addEventListener('dragover',e=>e.preventDefault());
 canvas.addEventListener('drop',e=>{ e.preventDefault(); const t=e.dataTransfer.getData('text/plain'); if(!TYPES[t]) return; const p=groundPt(e)||new THREE.Vector3(); addDev(t,snap(p.x),snap(p.z)); });
-document.querySelectorAll('.dev').forEach(el=>{ el.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',el.dataset.type)); el.addEventListener('click',()=>{ const k=net.devices.length; addDev(el.dataset.type,snap(((k%5)-2)*3),snap((Math.floor(k/5)%3-1)*3+1)); }); });
+document.querySelectorAll('.dev').forEach(el=>{ el.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',el.dataset.type)); el.addEventListener('click',()=>{ const p=freeSpot(); addDev(el.dataset.type,p.x,p.z); if(isMobile()) setSheet(null); }); });
+function freeSpot(){ const cx=snap(controls.target.x),cz=snap(controls.target.z); for(let r=0;r<12;r++){ for(let a=0;a<16;a++){ const ang=a/16*Math.PI*2; const x=snap(cx+Math.cos(ang)*r*1.5),z=snap(cz+Math.sin(ang)*r*1.5*.8); if(Math.abs(x)<19&&Math.abs(z)<19&&net.devices.every(d=>Math.hypot(d.x-x,d.z-z)>2.6)) return {x,z}; if(r===0) break; } } return {x:cx,z:cz}; }
 function addDev(t,x,z){ const d=net.add(t,x,z); select(d.id); changed(); }
 function setTool(t){ tool=t; cableFrom=null; $('#tCable').classList.toggle('on',t==='cable'); $('#tSelect').classList.toggle('on',t==='select'); canvas.style.cursor=t==='cable'?'crosshair':''; syncScene(); }
 $('#tCable').onclick=()=>setTool(tool==='cable'?'select':'cable'); $('#tSelect').onclick=()=>setTool('select');
@@ -121,29 +127,48 @@ function startNext(){
   if(batchActive<=0) startNext();
 }
 function flash(d){ const g=nodes[d.id]; if(!g) return; g.userData.flash=performance.now(); toast('✖ '+(batches.reason||'الباكت وقع عند '+d.name),true); }
-function fit(){ if(!net.devices.length) return; let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; net.devices.forEach(d=>{x0=Math.min(x0,d.x);x1=Math.max(x1,d.x);z0=Math.min(z0,d.z);z1=Math.max(z1,d.z);}); const cx=(x0+x1)/2,cz=(z0+z1)/2,ext=Math.max(x1-x0,(z1-z0)*1.6,6); const dist=Math.min(36,ext*.8/Math.max(.55,camera.aspect*.55)+3); controls.target.set(cx,0,cz); camera.position.set(cx,dist*.62,cz+dist*.78); }
+function fit(){ if(!net.devices.length) return; let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9; net.devices.forEach(d=>{x0=Math.min(x0,d.x);x1=Math.max(x1,d.x);z0=Math.min(z0,d.z);z1=Math.max(z1,d.z);}); const cx=(x0+x1)/2,cz=(z0+z1)/2,ext=Math.max(x1-x0,(z1-z0)*1.6,6); resize(); const dist=Math.min(48,(ext*.8/Math.max(.55,camera.aspect*.55)+3)*(camera.aspect<.8?1.35:1)); controls.target.set(cx,0,cz); camera.position.set(cx,dist*.62,cz+dist*.78); }
 let topv=false; $('#bView').onclick=()=>{ topv=!topv; fit(); if(topv){camera.position.y*=1.6;camera.position.z=controls.target.z+1;} };
 
 // ---------- terminal ----------
-let termDev=null;
-function openTerm(id){ const d=net.dev(id); if(!d) return; termDev=id; $('#term').classList.remove('hidden'); $('#termName').textContent=d.name+' ('+d.type+')'; $('#prompt').textContent=d.name+'>'; renderTerm(); $('#termIn').focus(); }
+let termDev=null; const hidx={}; const isIos=d=>d.type==='router'||d.type==='switch';
+const HOSTCMDS=['ip set','ip dns','dhcp','ipconfig','ping','traceroute','nslookup','arp','help','clear','dhcp-server','dns-add'];
+const curPrompt=d=>isIos(d)?iosPrompt(d):d.name+'>';
+function openTerm(id){ const d=net.dev(id); if(!d) return; termDev=id; $('#term').classList.remove('hidden'); document.body.classList.add('term-open'); if(!hist[id]&&isIos(d)) iosBanner(d).forEach(l=>pushTerm(id,l,'mut')); updTermHead(); renderTerm(); fitTerm(); if(!isTouch) $('#termIn').focus(); }
+function updTermHead(){ const d=net.dev(termDev); if(!d) return; $('#termName').textContent=d.name+' ('+d.type+')'; $('#prompt').textContent=curPrompt(d); }
+function closeTerm(){ $('#term').classList.add('hidden'); document.body.classList.remove('term-open'); }
 function renderTerm(){ const o=$('#termOut'); o.innerHTML=''; (hist[termDev]||[]).forEach(x=>{ const l=document.createElement('div'); l.className=x.c||''; l.textContent=x.t; o.append(l);}); o.scrollTop=1e9; }
 function pushTerm(id,t,c){ (hist[id]=hist[id]||[]).push({t,c}); }
-$('#termX').onclick=()=>$('#term').classList.add('hidden');
-$('#termIn').addEventListener('keydown',e=>{ if(e.key!=='Enter') return; const v=e.target.value; e.target.value=''; const d=net.dev(termDev); if(!d||!v.trim()) return;
-  if(v.trim()==='clear'){ hist[termDev]=[]; renderTerm(); return; }
-  pushTerm(termDev,d.name+'> '+v,'cmd'); const r=runCli(net,d,v); r.out.forEach(l=>pushTerm(termDev,l,l.startsWith('✖')||l.includes('failed')?'err':''));
-  renderTerm(); afterCli(d,r); });
-function afterCli(d,r){ if(r.steps&&r.steps.length){ if(r.r&&r.r.reason) batches.reason=r.r.reason; playSteps(r.steps,r.r&&!r.r.ok?r.r.at:null); logSteps(d,r); }
+const errCls=l=>/^(%|✖)|failed|فشل/.test(l)?'err':'';
+$('#termX').onclick=closeTerm;
+function submit(d,v){ const p=curPrompt(d); pushTerm(d.id,p+' '+v,'cmd'); (cmdHist[d.id]=cmdHist[d.id]||[]).push(v); hidx[d.id]=null;
+  const r=isIos(d)?iosExec(net,d,v):runCli(net,d,v); r.out.forEach(l=>pushTerm(d.id,l,errCls(l))); updTermHead(); renderTerm(); afterCli(d,r); }
+const cmdHist={};
+function termHelp(d,v){ v=v.replace(/\?+$/,'').trimEnd(); pushTerm(d.id,curPrompt(d)+' '+v+'?','cmd'); if(isIos(d)) iosHelp(d,v).forEach(l=>pushTerm(d.id,l,'')); else runCli(net,d,'help').out.forEach(l=>pushTerm(d.id,l,'')); renderTerm(); }
+function termTab(d,inp){ if(isIos(d)){ const r=iosComplete(d,inp.value); if(r.options.length>1){ pushTerm(d.id,curPrompt(d)+' '+inp.value,'cmd'); pushTerm(d.id,r.options.join('   '),'mut'); renderTerm(); } inp.value=r.line; } else { const v=inp.value; const m=HOSTCMDS.filter(c=>c.startsWith(v)); if(m.length===1) inp.value=m[0]+' '; else if(m.length>1) { pushTerm(d.id,m.join('   '),'mut'); renderTerm(); } } }
+function termKey(k){ const inp=$('#termIn'); const d=net.dev(termDev); if(!d) return;
+  if(k==='tab') termTab(d,inp); else if(k==='help') termHelp(d,inp.value); else if(k==='ctrlz'){ if(isIos(d)){ pushTerm(d.id,curPrompt(d)+' ^Z','cmd'); const r=iosExec(net,d,'end'); updTermHead(); renderTerm(); afterCli(d,r); } inp.value=''; }
+  else if(k==='up'||k==='down'){ const h=cmdHist[d.id]||[]; if(!h.length) return; let ix=hidx[d.id]; if(ix==null) ix=h.length; ix=k==='up'?Math.max(0,ix-1):Math.min(h.length,ix+1); hidx[d.id]=ix; inp.value=h[ix]||''; }
+  if(!isTouch) inp.focus(); }
+$('#termKeys').addEventListener('click',e=>{ const b=e.target.closest('[data-k]'); if(b) termKey(b.dataset.k); });
+$('#termIn').addEventListener('keydown',e=>{ const d=net.dev(termDev); if(!d) return;
+  if(e.key==='Enter'){ const v=e.target.value; e.target.value=''; if(!v.trim()) { pushTerm(d.id,curPrompt(d),'cmd'); renderTerm(); return; } if(v.trim()==='clear'){ hist[termDev]=[]; renderTerm(); return; } submit(d,v); }
+  else if(e.key==='Tab'){ e.preventDefault(); termKey('tab'); } else if(e.key==='?'){ e.preventDefault(); termKey('help'); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); termKey('up'); } else if(e.key==='ArrowDown'){ e.preventDefault(); termKey('down'); }
+  else if(e.ctrlKey&&(e.key==='z'||e.key==='Z')){ e.preventDefault(); termKey('ctrlz'); } });
+function fitTerm(){ const t=$('#term'); if(!document.body.classList.contains('term-open')||!isMobile()){ t.style.height=''; t.style.top=''; return; } const vv=window.visualViewport; if(vv){ t.style.height=vv.height+'px'; t.style.top=vv.offsetTop+'px'; } }
+if(window.visualViewport){ visualViewport.addEventListener('resize',()=>{ fitTerm(); const o=$('#termOut'); o.scrollTop=1e9; }); visualViewport.addEventListener('scroll',fitTerm); }
+function afterCli(d,r){ if(r.changed) updTermHead(); if(r.steps&&r.steps.length){ if(r.r&&r.r.reason) batches.reason=r.r.reason; playSteps(r.steps,r.r&&!r.r.ok?r.r.at:null); logSteps(d,r); }
   if(r.tag) achieved[r.tag]=true; changed(true); renderChal(true); }
 function logSteps(d,r){ const seen=[]; for(const s of r.steps){ logs.unshift({k:s.kind,t:`${s.label}: ${s.path.map(i=>net.dev(i)?.name||'?').join(' → ')}`}); } logs.length=Math.min(logs.length,80); renderLog(); }
 const achieved={};
 
 // ---------- inspector ----------
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function select(id,keepLink){ selected=id; if(!keepLink&&id) selLink=null; if(id) showTab('insp'); renderInsp(); syncScene(); }
+function select(id,keepLink){ selected=id; if(!keepLink&&id) selLink=null; if(id) showTab('insp'); if(id&&isMobile()&&!isTouch){} renderInsp(); syncScene(); }
 function renderInsp(){
   const el=$('#insp'); const d=selected&&net.dev(selected);
+  if(!d&&selLink){ el.innerHTML=`<div class="card"><h5>كابل متحدد</h5><button class="btn2 danger" data-act="dellink">احذف الكابل</button></div>`; return; }
   if(!d){ el.innerHTML=`<div class="card"><h5>مرحباً في Sabaka 3D</h5><p class="mut">ابني الشبكة بنفسك: اسحب أجهزة من القايمة، وصلها بالكابل، وظبط الـ IPs. دوس مرتين على أي جهاز تفتح الـ CLI.</p><p class="mut">جرب زرار «مثال» فوق لشبكة جاهزة بـ router وVLAN وسيرفر.</p></div><div class="card"><h5>اختصارات</h5><p class="mut">اسحب بالزر الأيسر للدوران · الأيمن للتحريك · العجلة للزووم<br>C كابل · V تحديد · Del حذف</p></div>`; return; }
   const h=[`<div class="card"><h5>${esc(d.type.toUpperCase())}</h5><div class="row two"><span>الاسم</span><input class="f" data-k="name" value="${esc(d.name)}"></div><button class="btn2" data-act="term">افتح الـ CLI</button></div>`];
   if(d.type==='pc'||d.type==='server'){ const i=d.ifaces[0];
@@ -167,7 +192,7 @@ $('#insp').addEventListener('change',e=>{ const t=e.target; const d=net.dev(sele
   else if(t.dataset.if){ const i=net.iface(d,t.dataset.if); const k=t.dataset.k; if(k==='vlan') i.vlan=+t.value||1; else i[k]=t.value.trim(); if(k==='mode') renderInsp(); d.dhcpClient=false; }
   else if(t.dataset.k){ d[t.dataset.k]=t.value.trim(); }
   changed(); });
-$('#insp').addEventListener('click',e=>{ const t=e.target.closest('[data-act],[data-delrec],[data-delroute],[data-delsub]'); if(!t) return; e.preventDefault(); const d=net.dev(selected); if(!d) return;
+$('#insp').addEventListener('click',e=>{ const t=e.target.closest('[data-act],[data-delrec],[data-delroute],[data-delsub]'); if(!t) return; e.preventDefault(); const d=net.dev(selected); if(!d&&t.dataset.act==='dellink'&&selLink){ net.removeLink(selLink); selLink=null; changed(); return; } if(!d) return;
   if(t.dataset.delrec){ delete d.dnsRecords[t.dataset.delrec]; changed(); return; }
   if(t.dataset.delsub){ const [pn,v]=t.dataset.delsub.split('|'); const i=net.iface(d,pn); i.subs=i.subs.filter(x=>x.vlan!==+v); changed(); return; }
   if(t.dataset.delroute){ d.routes.splice(+t.dataset.delroute,1); changed(); return; }
@@ -179,10 +204,19 @@ $('#insp').addEventListener('click',e=>{ const t=e.target.closest('[data-act],[d
   else if(a==='subadd'){ const r=runCli(net,d,`ip sub ${$('#sP').value} ${$('#sV').value} ${$('#sI').value} ${$('#sM').value}`); if(r.out.some(x=>x.startsWith('✖'))) toast(r.out[0],true); else changed(); }
   else if(a==='routeadd'){ const r=runCli(net,d,`route add ${$('#rN').value} ${$('#rM').value} ${$('#rH').value}`); if(r.out.some(x=>x.startsWith('✖'))) toast(r.out[0],true); else changed(); }
 });
-function runTerm(d,cmd){ pushTerm(d.id,d.name+'> '+cmd,'cmd'); const r=runCli(net,d,cmd); r.out.forEach(l=>pushTerm(d.id,l,l.includes('فشل')?'err':'')); renderTerm(); afterCli(d,r); }
+function runTerm(d,cmd){ if(termDev!==d.id) openTerm(d.id); submit(d,cmd); }
 
-// ---------- tabs / log / challenges ----------
-function showTab(n){ document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===n)); document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('hidden',t.id!==n)); }
+// ---------- mobile sheets ----------
+function setSheet(n){ document.body.classList.toggle('sheet-pal',n==='pal'); document.body.classList.toggle('sheet-side',n==='side'); document.querySelectorAll('#mnav [data-m]').forEach(b=>b.classList.toggle('on',(n==='pal'&&b.dataset.m==='pal')||(n==='side'&&['insp','chal'].includes(b.dataset.m)&&b.dataset.m===curTab))); }
+let curTab='insp';
+$('#mnav').addEventListener('click',e=>{ const b=e.target.closest('[data-m]'); if(!b) return; const m=b.dataset.m; const open=document.body.classList.contains('sheet-pal')?'pal':document.body.classList.contains('sheet-side')?'side':null;
+  if(m==='pal') setSheet(open==='pal'?null:'pal');
+  else if(m==='cable'){ setTool(tool==='cable'?'select':'cable'); b.classList.toggle('on',tool==='cable'); setSheet(null); if(tool==='cable') toast('اختار جهاز وبعدين الجهاز التاني'); }
+  else if(m==='cli'){ const id=selected||net.devices[0]?.id; if(!selected) toast('اخترت أول جهاز. اضغط على جهاز عشان تفتح الـ CLI بتاعه'); if(id){ select(id); openTerm(id); setSheet(null); } }
+  else if(m==='insp'||m==='chal'){ showTab(m); setSheet(open==='side'&&curTab===m?null:'side'); }
+  else if(m==='more'){ document.body.classList.toggle('menu-open'); } });
+
+function showTab(n){ curTab=n==='log'?'chal':n; document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===n)); document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('hidden',t.id!==n)); }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 function renderLog(){ $('#log').innerHTML=logs.length?logs.map(l=>`<div class="logrow"><span class="k" style="background:${KCOL[l.k]||'#fff'}"></span>${esc(l.t)}</div>`).join(''):'<p class="mut">ابعت ping أو dhcp وهتلاقي الباكتات هنا خطوة بخطوة.</p>'; }
 const hosts=()=>net.devices.filter(d=>d.type==='pc'||d.type==='server');
@@ -198,6 +232,8 @@ const CH=[
  {t:'Traceroute',d:'شغّل traceroute من PC لجهاز بعيد عن طريق router وشوف الـ hops.',f:()=>!!achieved['trace-ok']&&net.devices.some(d=>d.type==='router')},
 
  {t:'Router-on-a-stick',d:'اعمل VLAN 10 و20 على switch واحد، خلّي البورت ناحية الراوتر trunk، واعمل sub-interface لكل VLAN على الراوتر (ip sub). بعدين PC من VLAN 10 يعمل ping لـ PC في VLAN 20.',f:()=>net.devices.some(r=>r.type==='router'&&r.ifaces.some(i=>(i.subs||[]).length>=2))&&pairs().some(([a,b])=>{const r=quiet(a,b);return r&&r.ok&&r.hops.some(h=>h.type==='router')&&a.ifaces[0].link&&net.peer(a,a.ifaces[0]).dev===net.peer(b,b.ifaces[0]).dev;})},
+
+ {t:'CLI بأسلوب IOS',d:'من الـ CLI بتاع الراوتر: اكتب enable ثم configure terminal، افتح interface، ادي IP بـ ip address، وبعدين اعمل ping من PC لعنوان الراوتر ويرد.',f:()=>!!achieved['ios-ip']&&!!achieved['ping-ok']},
 ];
 let chDone=new Set();
 function renderChal(ev){ if(ev) CH.forEach((c,i)=>{ let ok=false; try{ok=!!c.f();}catch(e){} if(ok) chDone.add(i);}); localStorage.setItem('sabaka-ch',JSON.stringify([...chDone]));
