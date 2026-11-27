@@ -113,5 +113,65 @@ quiz:[
 {q:'الـ 802.1Q tag بيشيل:',o:['MAC address','VLAN ID (12 bit) و Priority','IP address','TTL'],a:1,e:'12 bit للـ VLAN ID = 4096 قيمة (4094 صالحة).'},
 {q:'عشان VLAN 10 يتكلم مع VLAN 20 نحتاج:',o:['Hub','Switch تاني','L3 device (Router أو L3 Switch)','كابل cross'],a:2,e:'الـ VLANs L2 معزولة؛ التوجيه محتاج L3.'},
 {q:'الـ Native VLAN على Trunk معناها:',o:['VLAN ممنوع','VLAN بيعدّي untagged','VLAN الإدارة بس','VLAN مشفّر'],a:1,e:'وبيتحط نفسه على الطرفين لتجنب الـ mismatch.'}
+]},
+static:{id:'static',nav:'Routing: Static',ex:'example',
+title:'الـ Routing: Routing Table والـ Static Routes',
+sub:'إزاي الـ Router بيقرر الـ packet تروح فين، وإزاي تكتب الطرق بإيدك، ومعنى Longest Prefix Match.',
+sections:[
+{html:`<h2>1) الـ Router بيعمل إيه بالظبط؟</h2>
+<p>الـ Router بيستقبل packet، يفك الـ frame، ويبص على <b>Destination IP</b>. بعد كده بيسأل سؤال واحد: "الشبكة اللي الـ IP ده فيها، أبعت الـ packet لمين بعد كده؟" الإجابة موجودة في <b>Routing Table</b>. كل سطر فيها (route) بيقول: <b>الشبكة الهدف + الـ mask + الـ Next-hop (أو الـ interface الخارج)</b>.</p>
+<p>الـ Router ما بيعرفش الطريق كله، بيعرف <b>الخطوة الجاية بس</b> (Next-hop). وكل Router بعده بيقرر الخطوة اللي بعدها. ودي فكرة الـ <b>hop-by-hop routing</b>.</p>
+<h3>الروتات جاية منين؟ (3 مصادر)</h3>
+<table><tr><th>النوع</th><th>الرمز</th><th>المصدر</th></tr>
+<tr><td><b>Connected</b></td><td>C</td><td>الشبكات المتوصلة مباشرة بـ interfaces الراوتر (تلقائي أول ما الـ interface يبقى up وله IP)</td></tr>
+<tr><td><b>Static</b></td><td>S</td><td>إنت بتكتبها يدوي</td></tr>
+<tr><td><b>Dynamic</b></td><td>R, O...</td><td>بروتوكولات زي RIP و OSPF (الدرس الجاي)</td></tr></table>
+<div class="box sim"><b class="t">في المحاكي</b>اضغط على Router واكتب <code>show ip route</code>. هتشوف سطور C لكل شبكة متوصلة. دي أول حاجة اتعملت لوحدها من غير ما تكتب أي routing.</div>`},
+{html:`<h2>2) مثال: ليه محتاجين Static Route؟</h2>
+<p>شبكة فيها Router1 و Router2:</p>
+<pre>PC1 --- [R1] ======== [R2] --- PC2
+192.168.1.0/24   10.0.0.0/30   192.168.2.0/24
+R1: g0/0 = 192.168.1.1 , g0/1 = 10.0.0.1
+R2: g0/0 = 10.0.0.2   , g0/1 = 192.168.2.1</pre>
+<p>R1 عنده Connected routes لـ 192.168.1.0/24 و 10.0.0.0/30 بس. لما PC1 يبعت لـ 192.168.2.10: R1 يدوّر... <b>ملقاش</b> → يرمي الـ packet ويرجّع ICMP "Destination Unreachable". الحل: نعلّم R1 الطريق:</p>
+<pre>R1(config)# ip route 192.168.2.0 255.255.255.0 10.0.0.2
+R2(config)# ip route 192.168.1.0 255.255.255.0 10.0.0.1</pre>
+<p>الصيغة: <code>ip route &lt;الشبكة&gt; &lt;mask&gt; &lt;next-hop IP&gt;</code>. الـ next-hop لازم يكون <b>في شبكة متوصلة مباشرة</b> بالراوتر (10.0.0.2 على لينك R1-R2 ✔).</p>
+<div class="box err"><b class="t">لازم الاتجاهين!</b>أكتر غلطة في المبتدئين: يضيفوا route رايح بس. الـ ping بيوصل لـ PC2 لكن الرد مش عارف يرجع لأن R2 معندوش طريق لـ 192.168.1.0/24. اتأكد دايماً من الـ <b>return path</b>.</div>
+<h3>Default Route</h3>
+<p>لو عندك شبكة صغيرة وراها الإنترنت، مش هتكتب كل شبكات الإنترنت! بنكتب route واحدة معناها "أي حاجة معرفهاش ابعتها هنا":</p>
+<pre>R1(config)# ip route 0.0.0.0 0.0.0.0 10.0.0.2</pre>
+<p>اسمها <b>Default route</b> أو <b>Gateway of last resort</b>، و /0 يعني "بتتطابق مع أي IP" وأقل واحدة تفضيلاً.</p>`},
+{html:`<h2>3) Longest Prefix Match: القاعدة الأهم</h2>
+<p>ممكن أكتر من route تتطابق مع نفس الـ IP. القاعدة: الـ Router يختار الـ route صاحبة <b>أطول prefix</b> (أكتر bits متطابقة، يعني الأكثر تحديداً). مثال: لو الـ IP = <code>10.1.5.9</code> وعندك routes لـ 10.0.0.0/8 و 10.1.0.0/16 و 10.1.5.0/24: التلاتة بتتطابق، لكن /24 هي الأطول → هي اللي بتتختار.</p>
+<p>جرّب: اكتب أي IP واتفرج الـ Router يختار إيه من الجدول ده:</p>
+<pre>10.0.0.0/8      via 192.168.1.2
+10.1.0.0/16     via 192.168.1.3
+10.1.5.0/24     via 192.168.1.4
+192.168.1.0/24  connected (g0/0)
+0.0.0.0/0       via 192.168.1.1</pre>`,widget:'route'},
+{html:`<h2>4) Administrative Distance (إيه اللي يتفضل لو في مصادر)</h2>
+<p>لو نفس الشبكة اتعلمت بأكتر من طريقة (Static و OSPF مثلاً)، الـ Router بيقارن <b>Administrative Distance (AD)</b>: كل مصدر عنده "درجة ثقة" والأقل يكسب.</p>
+<table><tr><th>المصدر</th><th>AD</th></tr><tr><td>Connected</td><td>0</td></tr><tr><td>Static</td><td>1</td></tr><tr><td>OSPF</td><td>110</td></tr><tr><td>RIP</td><td>120</td></tr></table>
+<p><b>Floating static route</b>: route static بـ AD أعلى (مثلاً 200) كـ backup؛ مش بتتفعّل إلا لو الـ route الأساسي اتشال.</p>
+<h3>مزايا وعيوب الـ Static</h3>
+<ul><li>✔ بسيط، مفيش overhead على الـ CPU/الشبكة، متوقع، آمن.</li><li>✘ مش بيتأقلم لوحده: لو لينك وقع، لازم تغيّر بإيدك. وغير عملي في الشبكات الكبيرة. وده سبب وجود Dynamic Routing.</li></ul>`},
+{html:`<h2>5) أخطاء وتشخيص</h2>
+<div class="box err"><ul>
+<li>نسيان الـ return route (الأشهر).</li>
+<li>Next-hop IP غلط أو مش في شبكة متوصلة مباشرة.</li>
+<li>الـ mask غلط (مثلاً /24 بدل /30): بتتطابق مع شبكات مش مقصودة.</li>
+<li>الـ interface الخارج down: الـ static route بتختفي من الجدول.</li>
+<li>Routing loop: R1 يبعت لـ R2 و R2 يرجّعها لـ R1. الـ TTL هو اللي بينقذك.</li>
+<li>الـ Gateway على الـ PC مش الـ Router الصح.</li></ul></div>
+<h3>أدوات التشخيص</h3><ol><li><code>show ip route</code>: الـ route موجودة؟ ومطابقة لمين؟</li><li><code>ping</code> من الـ Router نفسه للـ next-hop، بعدين للهدف.</li><li><code>traceroute</code>: الـ hop اللي الرحلة بتقف عنده هو المشكلة (أو اللي بعده).</li></ol>`}
+],
+tryText:'حمّل المثال (شبكتين وراوتر)، واعمل <code>show ip route</code> على الـ Router. جرّب بعدها تعمل <code>ip route</code> جديدة لشبكة وهمية، شوفها اتضافت بحرف S، وبعدين اعمل <code>traceroute</code> لجهاز في الشبكة التانية.',
+quiz:[
+{q:'لو IP الهدف 10.1.5.9 والـ routes: 10.0.0.0/8 و 10.1.0.0/16 و 10.1.5.0/24. أنهي بتتختار؟',o:['10.0.0.0/8','10.1.0.0/16','10.1.5.0/24','الـ default'],a:2,e:'Longest prefix match: /24 هو الأكثر تحديداً.'},
+{q:'الـ Default route شكلها:',o:['255.255.255.255/32','0.0.0.0/0','127.0.0.0/8','10.0.0.0/8'],a:1,e:'/0 بتتطابق مع كل العناوين وأضعف أفضلية.'},
+{q:'Ping بيوصل ومفيش رد. السبب الأرجح؟',o:['الـ mask كبير','مفيش return route','الكابل بايظ','الـ DNS'],a:1,e:'الراوتر الأبعد معندوش طريق للرجوع للمصدر.'},
+{q:'أنهي AD أفضل (أقل)؟',o:['OSPF 110','RIP 120','Static 1','Floating static 200'],a:2,e:'الـ Static بـ 1، والـ Connected بـ 0.'},
+{q:'الـ next-hop في static route لازم يكون:',o:['أي IP في الإنترنت','في شبكة متوصلة مباشرة بالـ Router','IP الراوتر نفسه','MAC address'],a:1,e:'الراوتر لازم يقدر يعمل ARP للـ next-hop.'}
 ]}
 };
