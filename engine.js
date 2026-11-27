@@ -129,12 +129,12 @@ export class Net {
   }
   ifaceTo(d,nh){ return this.l3(d).find(i=>i.ip&&i.mask&&i.up&&i.link&&same(i.ip,nh,i.mask)); }
   // يرسل IP packet من src الى dstIp. proto: 'icmp'|'udp'. يرجع {ok,reason,hops:[{dev}],steps,at}
-  send(src,dstIp,{ttl=64,kind='icmp',label='ICMP',nat=null}={}){
+  send(src,dstIp,{ttl=64,kind='icmp',label='ICMP',nat=null,tproto=null,tport=null}={}){
     const steps=[]; const hops=[]; let cur=src; let first=true;
     const srcIf=()=>src.ifaces.find(i=>i.ip);
     if(!this.l3(src).some(i=>i.ip&&i.link)) return {ok:false,reason:'مفيش IP متظبط أو كابل',steps,hops};
     const own=this.owner(dstIp); if(own&&own.d===src) return {ok:true,hops:[src],steps,dst:src};
-    let t=ttl; let sip=null; let natInfo=null; let ingress=null; const proto=(kind==='icmp'||kind==='reply')?'icmp':'udp'; const dport=kind==='dns'?53:null;
+    let t=ttl; let sip=null; let natInfo=null; let ingress=null; const proto=tproto||((kind==='icmp'||kind==='reply')?'icmp':'udp'); const dport=tport!=null?tport:(kind==='dns'?53:null);
     for(let guard=0;guard<32;guard++){
       let r=this.route(cur,dstIp); if(sip===null&&r) sip=r.out.ip; if(r&&nat&&dstIp===nat.pub&&nat.router!==cur&&r.nh===dstIp&&nat.outIp) r={...r,nh:nat.outIp};
       if(!r) return {ok:false,reason:cur===src?'مفيش route / default gateway للوجهة دي':'Destination unreachable من '+cur.name,steps,hops,at:cur,type:'unreach'};
@@ -167,6 +167,18 @@ export class Net {
     steps.push(...back.steps);
     if(!back.ok) return {ok:false,reason:'الباكت وصل بس الرد مرجعش ('+back.reason+') — راجع الـ gateway/route على الجهاز التاني',steps,hops:go.hops,ip};
     return {ok:true,steps,hops:go.hops,back:back.hops,ip,nat:go.nat,seenAs:go.seenAs};
+  }
+  tcp(src,target,port){
+    let ip=ip2n(target)!==null?target:null; const steps=[]; const ev=[];
+    if(!ip){ const q=this.resolve(src,target); steps.push(...q.steps); if(!q.ip) return {ok:false,stage:'dns',reason:'Name resolution failed: '+target,steps,ev,hops:[]}; ip=q.ip; }
+    const go=this.send(src,ip,{kind:'tcp',label:'SYN',tproto:'tcp',tport:port}); steps.push(...go.steps); ev.push('1) SYN  (client → server, dst port '+port+')');
+    if(!go.ok) return {ok:false,stage:'syn',reason:go.reason,acl:go.acl,steps,ev,hops:go.hops||[],ip};
+    const dst=go.dst; const lp=dst.listen||(dst.type==='server'?[80,443]:[]); const cip=go.nat?go.nat.pub:(this.primaryIp(src)||ip);
+    if(!lp.includes(port)){ const rb=this.send(dst,cip,{kind:'rst',label:'RST',nat:go.nat,tproto:'tcp'}); steps.push(...rb.steps); ev.push('2) RST  (السيرفر مفيش حد بيسمع على البورت ده)'); return {ok:false,stage:'rst',reason:'Connection refused (RST): مفيش service بتسمع على البورت '+port+' عند '+dst.name,steps,ev,hops:go.hops,ip,dst}; }
+    const sa=this.send(dst,cip,{kind:'tcpr',label:'SYN-ACK',nat:go.nat,tproto:'tcp'}); steps.push(...sa.steps); ev.push('2) SYN-ACK  (السيرفر → client)');
+    if(!sa.ok) return {ok:false,stage:'synack',reason:'الـ SYN وصل بس الـ SYN-ACK مرجعش ('+sa.reason+')',steps,ev,hops:go.hops,ip,dst};
+    const ak=this.send(src,ip,{kind:'tcp',label:'ACK',tproto:'tcp',tport:port}); steps.push(...ak.steps); ev.push('3) ACK  (client → server)  =  Established');
+    return {ok:true,steps,ev,hops:go.hops,ip,dst,nat:go.nat,seenAs:go.seenAs};
   }
   resolve(src,name){
     const steps=[]; const dns=src.dns; if(!dns) return {ip:null,steps,why:'مفيش DNS server'};
@@ -221,8 +233,8 @@ export function runCli(net,d,line){
   const showIf=()=>{ p('Interface   IP address       Mask              Status  MAC'); for(const i of net.l3(d)){ if(isSw) continue; p(`${i.name.padEnd(11)} ${(i.ip||'-').padEnd(16)} ${(i.mask||'-').padEnd(17)} ${(i.link&&i.up?'up':'down').padEnd(7)} ${i.mac}`);} if(d.gateway) p('Default gateway: '+d.gateway); if(d.dns) p('DNS server: '+d.dns); };
   if(c==='help'||c==='?'){
     p('الأوامر المتاحة:');
-    if(isHost){ p('  ip set <ip> <mask> [gateway]    ظبط عنوان الجهاز'); p('  ip dns <ip>                     ظبط DNS'); p('  dhcp                            هات IP من DHCP server'); p('  ipconfig                        اعرض الإعدادات'); p('  ping <ip|name>'); p('  traceroute <ip|name>'); p('  nslookup <name>'); p('  arp                             جدول ARP'); }
-    if(isHost&&d.type==='server'){ p('  dhcp-server <start-ip> <count> <gw> [dns]'); p('  dns-add <name> <ip>'); }
+    if(isHost){ p('  ip set <ip> <mask> [gateway]    ظبط عنوان الجهاز'); p('  ip dns <ip>                     ظبط DNS'); p('  dhcp                            هات IP من DHCP server'); p('  ipconfig                        اعرض الإعدادات'); p('  ping <ip|name>'); p('  traceroute <ip|name>'); p('  nslookup <name>'); p('  tcp <ip|name> [port]            جرّب TCP handshake (SYN, SYN-ACK, ACK)'); p('  telnet <ip|name> [port]         زي tcp (الافتراضي 23)'); p('  arp                             جدول ARP'); }
+    if(isHost&&d.type==='server'){ p('  dhcp-server <start-ip> <count> <gw> [dns]'); p('  dns-add <name> <ip>'); p('  listen <port> / unlisten <port> بورتات الـ TCP (الافتراضي 80 و 443)'); }
     if(isR){ p('  ip sub <port> <vlan> <ip> <mask>  router-on-a-stick'); p('  ip set <port> <ip> <mask>       مثال: ip set g0/0 192.168.1.1 255.255.255.0'); p('  route add <net> <mask> <next-hop>'); p('  route del <net>'); p('  show ip route | show ip int | arp'); p('  ping / traceroute'); }
     if(isSw){ p('  vlan <port> <id>                مثال: vlan fa0/2 10'); p('  trunk <port> [vlans]            مثال: trunk fa0/8 10,20');  p('  show vlan | show mac'); }
     p('  clear   مسح الشاشة'); return {out,steps};
@@ -250,6 +262,9 @@ export function runCli(net,d,line){
   else if(c==='show'&&a[1]==='vlan'&&isSw){ p('Port    Mode    VLAN   Link'); for(const i of d.ifaces) p(`${i.name.padEnd(7)} ${i.mode.padEnd(7)} ${String(i.mode==='trunk'?(i.allowed||'all'):i.vlan).padEnd(8)} ${i.link?'up':'down'}`); }
   else if(c==='show'&&a[1]==='mac'&&isSw){ const k=Object.entries(d.mac).map(([m,v])=>m+' '+(v.port||'')); p(k.length?'MAC learned: '+k.join(', '):'جدول MAC فاضي (ابعت ping الأول)'); }
   else if(c==='arp'&&!isSw){ const k=Object.entries(d.arp); if(!k.length) p('جدول ARP فاضي'); k.forEach(([a1,m])=>p(a1.split('|')[1]+'  →  '+m)); }
+  else if((c==='tcp'||c==='telnet')&&isHost){ if(!a[1]) throw c+' <ip|name> [port]  مثال: tcp 192.168.2.5 80'; const port=+(a[2]||(c==='telnet'?23:80)); if(!(port>0&&port<65536)) throw 'Port غلط'; const r=net.tcp(d,a[1],port); steps=r.steps; p(`TCP ${a[1]}${r.ip&&r.ip!==a[1]?' ('+r.ip+')':''} port ${port}`); (r.ev||[]).forEach(x=>p(x)); if(r.ok){ p('✔ Connection established (3-way handshake تم)'); if(r.nat) p(`NAT: السيرفر شاف ${r.seenAs}`); tag='ping-ok'; } else { p('✖ '+r.reason+(r.acl?' (غالباً الـ ACL بيمنع الـ SYN، وده بيبان كـ timeout)':'')); tag='ping-fail'; } return {out,steps,tag,r}; }
+  else if(c==='listen'&&d.type==='server'){ const port=+a[1]; if(!(port>0&&port<65536)) throw 'listen <port>  مثال: listen 8080'; d.listen=d.listen||[80,443]; if(!d.listen.includes(port)) d.listen.push(port); p('السيرفر بيسمع على البورتات: '+d.listen.join(', ')); }
+  else if(c==='unlisten'&&d.type==='server'){ const port=+a[1]; d.listen=(d.listen||[80,443]).filter(x=>x!==port); p('السيرفر بيسمع على البورتات: '+(d.listen.join(', ')||'ولا واحد')); }
   else if(c==='ping'&&!isSw){ if(!a[1]) throw 'ping <ip|name>'; const r=net.ping(d,a[1]); steps=r.steps; p(`PING ${a[1]}${r.ip&&r.ip!==a[1]?' ('+r.ip+')':''}`); if(r.ok){ const h=r.hops.length; for(let k=1;k<=4;k++) p(`Reply from ${r.ip}: bytes=32 time=${(h*0.8+k*0.1).toFixed(1)}ms TTL=${64-(h-1)}`); p('4/4 باكتات وصلت ✔'); if(r.nat) p(`NAT: الراوتر ${r.nat.router.name} ترجم ${r.nat.real} ← ${r.nat.pub} (السيرفر شاف ${r.seenAs})`); tag='ping-ok'; } else { p('Request failed: '+r.reason); tag='ping-fail'; } return {out,steps,tag,r}; }
   else if(c==='traceroute'&&!isSw){ if(!a[1]) throw 'traceroute <ip|name>'; const r=net.traceroute(d,a[1]); steps=r.steps; p('traceroute to '+a[1]+', max 16 hops'); if(r.nameFail) p('✖ فشل حل الاسم (DNS): '+a[1]); r.rows.forEach(x=>p(` ${x.ttl}  ${x.ip?x.ip.padEnd(16):'*'.padEnd(16)} ${x.name==='*'?'  '+x.fail:'('+x.name+')'}`)); if(r.ok) tag='trace-ok'; return {out,steps,tag,r}; }
   else if(c==='nslookup'&&isHost){ if(!a[1]) throw 'nslookup <name>'; const q=net.resolve(d,a[1]); steps=q.steps; if(q.ip){ p('Server: '+d.dns); p(`${a[1]} → ${q.ip}`); tag='dns-ok'; } else p('فشل: '+(q.why||'NXDOMAIN')); }
