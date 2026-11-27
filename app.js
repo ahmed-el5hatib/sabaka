@@ -238,6 +238,7 @@ const CH=[
  {t:'Router-on-a-stick',d:'اعمل VLAN 10 و20 على switch واحد، خلّي البورت ناحية الراوتر trunk، واعمل sub-interface لكل VLAN على الراوتر (ip sub). بعدين PC من VLAN 10 يعمل ping لـ PC في VLAN 20.',f:()=>net.devices.some(r=>r.type==='router'&&r.ifaces.some(i=>(i.subs||[]).length>=2))&&pairs().some(([a,b])=>{const r=quiet(a,b);return r&&r.ok&&r.hops.some(h=>h.type==='router')&&a.ifaces[0].link&&net.peer(a,a.ifaces[0]).dev===net.peer(b,b.ifaces[0]).dev;})},
 
  {t:'STP: Root Bridge',d:'وصّل 3 switches في مثلث (لفّة). خلّي switch معين هو الـ Root بتقليل الـ priority (spanning-tree vlan 1 priority 4096) وشوف STP بيقفل لينك واحد (برتقالي) والـ ping لسه شغال.',f:()=>net.devices.some(d=>d.type==='switch'&&(d.stpPrio??32768)<32768&&net.stp().root===d)&&Object.values(net.stp().roles).includes('blocked')&&pairs().some(([x,y])=>quiet(x,y)?.ok)},
+ {t:'RIP',d:'وصّل 3 راوترات ورا بعض مع PC على الطرفين (زر RIP بيجهزهم). شغّل router rip على كل راوتر (network ...) من غير ولا static route، وخلّي الـ ping بين الـ PCs ينجح.',f:()=>net.devices.filter(d=>d.type==='router'&&d.rip&&d.rip.on&&!(d.routes||[]).length).length>=3&&pairs().some(([x,y])=>{const r=quiet(x,y);return r&&r.ok&&r.hops.filter(h=>h.type==='router').length>=3;})},
  {t:'CLI بأسلوب IOS',d:'من الـ CLI بتاع الراوتر: اكتب enable ثم configure terminal، افتح interface، ادي IP بـ ip address، وبعدين اعمل ping من PC لعنوان الراوتر ويرد.',f:()=>!!achieved['ios-ip']&&!!achieved['ping-ok']},
 ];
 let chDone=new Set();
@@ -260,6 +261,15 @@ function stpExample(){
   const p=[n.add('pc',-8,4,'PC1'),n.add('pc',8,4,'PC2')];
   n.connect(s[0].id,s[1].id); n.connect(s[1].id,s[2].id); n.connect(s[2].id,s[0].id); n.connect(p[0].id,s[0].id); n.connect(p[1].id,s[1].id);
   const R=(d,l)=>runCli(n,d,l); R(p[0],'ip set 10.0.0.1 255.255.255.0'); R(p[1],'ip set 10.0.0.2 255.255.255.0'); return n.toJSON(); }
+$('#bRip').onclick=()=>{ loadNet(ripExample()); toast('مثال: 3 راوترات بيتعلموا الـ routes لوحدهم بـ RIP'); };
+function ripExample(){
+  const n=new Net(); const r=[n.add('router',-8,0,'R1'),n.add('router',0,-3,'R2'),n.add('router',8,0,'R3')];
+  const a=n.add('pc',-10,4,'PC1'), b=n.add('pc',10,4,'PC3'); n.connect(r[0].id,r[1].id); n.connect(r[1].id,r[2].id); n.connect(a.id,r[0].id); n.connect(b.id,r[2].id);
+  const X=(d,l)=>iosExec(n,d,l); const cfg=(d,ls)=>{ X(d,'enable'); X(d,'conf t'); ls.forEach(l=>X(d,l)); X(d,'end'); };
+  cfg(r[0],['int g0/0','ip address 10.0.12.1 255.255.255.0','no shutdown','int g0/1','ip address 192.168.1.1 255.255.255.0','no shutdown']);
+  cfg(r[1],['int g0/0','ip address 10.0.12.2 255.255.255.0','no shutdown','int g0/1','ip address 10.0.23.2 255.255.255.0','no shutdown']);
+  cfg(r[2],['int g0/0','ip address 10.0.23.3 255.255.255.0','no shutdown','int g0/1','ip address 192.168.3.1 255.255.255.0','no shutdown']);
+  const R=(d,l)=>runCli(n,d,l); R(a,'ip set 192.168.1.10 255.255.255.0 192.168.1.1'); R(b,'ip set 192.168.3.10 255.255.255.0 192.168.3.1'); return n.toJSON(); }
 function vlanExample(){
   const n=new Net(); const sw=n.add('switch',0,2,'SW1'), r=n.add('router',0,-3,'R1');
   const p=[n.add('pc',-6,4,'PC1'),n.add('pc',-3,5,'PC2'),n.add('pc',3,5,'PC3'),n.add('pc',6,4,'PC4')];
@@ -297,5 +307,5 @@ function frame(){
 // init
 try{ const s=localStorage.getItem('sabaka'); net=s?Net.from(JSON.parse(s)):Net.from(example()); }catch(e){ net=Net.from(example()); }
 if(!net.devices.length) net=Net.from(example());
-window.__net=()=>net; window.__app={stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
+window.__net=()=>net; window.__app={ripExample,stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
 syncScene(); renderInsp(); renderChal(); renderLog(); fit(); frame();
