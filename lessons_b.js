@@ -430,8 +430,8 @@ sections:[
 <div class="box sim"><b class="t">في المحاكي</b>اضغط "مثال" وافتح السيرفر. الأوامر الحقيقية الموجودة:
 <ul><li>على السيرفر: <code>dhcp-server 192.168.1.100 20 192.168.1.1 192.168.1.5</code> (أول IP، عدد العناوين، gateway، DNS)</li>
 <li>على السيرفر: <code>dns-add lab.local 192.168.1.20</code></li>
-<li>على أي PC: <code>dhcp</code> يطلب عنوان، <code>ipconfig</code> يعرض الإعدادات، <code>ip dns &lt;ip&gt;</code> يظبط DNS يدوي، <code>nslookup lab.local</code>، <code>ping lab.local</code>.</li></ul>
-الـ packets بتتحرك على الكابلات: لقطات الـ DHCP والـ DNS لونها مختلف عن ICMP. المحاكي بيعمل الـ DHCP في خطوة واحدة (من غير lease timers ولا relay).</div>
+<li>على الـ Router (جوه interface): <code>ip helper-address 192.168.2.5</code> عشان الـ relay يشتغل لو السيرفر في شبكة تانية. لازم الـ pool في الـ DHCP server يكون في subnet الـ interface ده.</li><li>على أي PC: <code>dhcp</code> يطلب عنوان، <code>ipconfig</code> يعرض الإعدادات، <code>ip dns &lt;ip&gt;</code> يظبط DNS يدوي، <code>nslookup lab.local</code>، <code>ping lab.local</code>.</li></ul>
+الـ packets بتتحرك على الكابلات: لقطات الـ DHCP والـ DNS لونها مختلف عن ICMP. المحاكي بيعمل الـ DHCP في خطوة واحدة (من غير lease timers).</div>
 <h3>أخطاء شائعة</h3>
 <div class="box err"><ul>
 <li><b>ping بالـ IP شغال وبالاسم لأ:</b> المشكلة DNS مش الشبكة. افحص <code>ipconfig</code> وشوف الـ DNS server.</li>
