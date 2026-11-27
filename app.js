@@ -225,7 +225,7 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.datas
 function renderLog(){ $('#log').innerHTML=logs.length?logs.map(l=>`<div class="logrow"><span class="k" style="background:${KCOL[l.k]||'#fff'}"></span>${esc(l.t)}</div>`).join(''):'<p class="mut">ابعت ping أو dhcp وهتلاقي الباكتات هنا خطوة بخطوة.</p>'; }
 const hosts=()=>net.devices.filter(d=>d.type==='pc'||d.type==='server');
 function pairs(){ const hs=hosts(),o=[]; for(let i=0;i<hs.length;i++)for(let j=i+1;j<hs.length;j++)o.push([hs[i],hs[j]]); return o; }
-const quiet=(a,b)=>{ const ip=net.primaryIp(b); if(!ip) return null; return net.ping(a,ip); };
+const quiet=(a,b)=>{ const ip=net.primaryIp(b); if(!ip) return null; net._q=true; try{ return net.ping(a,ip); } finally{ net._q=false; } };
 const CH=[
  {t:'أول ping',d:'وصّل جهازين PC بـ Switch، ادّيهم IPs في نفس الـ subnet، وخلّي الـ ping ينجح.',f:()=>pairs().some(([a,b])=>net.links.length&&[a,b].every(h=>net.primaryIp(h))&&quiet(a,b)?.ok&&!quiet(a,b).hops.some(h=>h.type==='router')&&quiet(a,b).steps.some(s=>s.path.some(i=>net.dev(i)?.type==='switch')))},
  {t:'Subnetting بـ Router',d:'اعمل شبكتين مختلفتين وصلهم بـ Router (gateway صح)، وخلي PC من كل شبكة يعملوا ping لبعض.',f:()=>pairs().some(([a,b])=>{const r=quiet(a,b);return r&&r.ok&&r.hops.some(h=>h.type==='router');})},
@@ -240,6 +240,7 @@ const CH=[
  {t:'STP: Root Bridge',d:'وصّل 3 switches في مثلث (لفّة). خلّي switch معين هو الـ Root بتقليل الـ priority (spanning-tree vlan 1 priority 4096) وشوف STP بيقفل لينك واحد (برتقالي) والـ ping لسه شغال.',f:()=>net.devices.some(d=>d.type==='switch'&&(d.stpPrio??32768)<32768&&net.stp().root===d)&&Object.values(net.stp().roles).includes('blocked')&&pairs().some(([x,y])=>quiet(x,y)?.ok)},
  {t:'RIP',d:'وصّل 3 راوترات ورا بعض مع PC على الطرفين (زر RIP بيجهزهم). شغّل router rip على كل راوتر (network ...) من غير ولا static route، وخلّي الـ ping بين الـ PCs ينجح.',f:()=>net.devices.filter(d=>d.type==='router'&&d.rip&&d.rip.on&&!(d.routes||[]).length).length>=3&&pairs().some(([x,y])=>{const r=quiet(x,y);return r&&r.ok&&r.hops.filter(h=>h.type==='router').length>=3;})},
  {t:'ACL',d:'زر ACL بيجهز راوتر وPCين وسيرفر. اكتب access-list يمنع PC1 (192.168.1.10) من السيرفر، وطبّقها بـ ip access-group على بورت الراوتر، وPC2 يفضل يوصل للسيرفر.',f:()=>net.devices.some(r=>r.type==='router'&&Object.values(r.acls||{}).some(x=>x.rules.some(q=>q.act==='deny')))&&net.devices.some(s=>s.type==='server'&&net.primaryIp(s)&&hosts().filter(h=>h.type==='pc'&&net.primaryIp(h)).some(h=>!quiet(h,s)?.ok)&&hosts().filter(h=>h.type==='pc'&&net.primaryIp(h)).some(h=>quiet(h,s)?.ok))},
+ {t:'NAT / PAT',d:'زر NAT بيجهز شبكة داخلية (192.168.1.0/24) وراوتر وISP وسيرفر. الـ ping من PC للسيرفر بيفشل لأن الـ ISP ميعرفش الشبكة الداخلية. اعمل access-list وip nat inside source list ... interface ... overload وخلّي الـ ping ينجح (والسيرفر يشوف عنوان الراوتر).',f:()=>net.devices.some(r=>r.type==='router'&&r.nat&&((r.nat.rules||[]).length||(r.nat.statics||[]).length))&&hosts().filter(h=>h.type==='pc').some(h=>net.devices.filter(s=>s.type==='server').some(s=>{const q=quiet(h,s);return q&&q.ok&&q.nat;}))},
  {t:'CLI بأسلوب IOS',d:'من الـ CLI بتاع الراوتر: اكتب enable ثم configure terminal، افتح interface، ادي IP بـ ip address، وبعدين اعمل ping من PC لعنوان الراوتر ويرد.',f:()=>!!achieved['ios-ip']&&!!achieved['ping-ok']},
 ];
 let chDone=new Set();
@@ -278,6 +279,15 @@ function aclExample(){
   n.connect(r.id,s1.id); n.connect(r.id,s2.id); n.connect(a.id,s1.id); n.connect(b.id,s1.id); n.connect(s.id,s2.id);
   const X=(d,l)=>iosExec(n,d,l); ['enable','conf t','int g0/0','ip address 192.168.1.1 255.255.255.0','no shutdown','int g0/1','ip address 192.168.2.1 255.255.255.0','no shutdown','end'].forEach(l=>X(r,l));
   const R=(d,l)=>runCli(n,d,l); R(a,'ip set 192.168.1.10 255.255.255.0 192.168.1.1'); R(b,'ip set 192.168.1.11 255.255.255.0 192.168.1.1'); R(s,'ip set 192.168.2.5 255.255.255.0 192.168.2.1'); return n.toJSON(); }
+$('#bNat').onclick=()=>{ loadNet(natExample()); toast('مثال: NAT/PAT — شبكة داخلية + ISP + سيرفر'); };
+function natExample(){
+  const n=new Net(); const r=n.add('router',-2,-2,'R1'), sw=n.add('switch',-6,1,'SW1'), isp=n.add('router',6,-2,'ISP');
+  const a=n.add('pc',-9,5,'PC1'), b=n.add('pc',-4,5,'PC2'), s=n.add('server',10,3,'WEB');
+  n.connect(r.id,sw.id); n.connect(r.id,isp.id); n.connect(a.id,sw.id); n.connect(b.id,sw.id); n.connect(s.id,isp.id);
+  const X=(d,l)=>iosExec(n,d,l); const cfg=(d,ls)=>{ X(d,'enable'); X(d,'conf t'); ls.forEach(l=>X(d,l)); X(d,'end'); };
+  cfg(r,['int g0/0','ip address 192.168.1.1 255.255.255.0','ip nat inside','no shutdown','int g0/1','ip address 203.0.113.1 255.255.255.0','ip nat outside','no shutdown','ip route 0.0.0.0 0.0.0.0 203.0.113.2']);
+  cfg(isp,['int g0/0','ip address 203.0.113.2 255.255.255.0','no shutdown','int g0/1','ip address 198.51.100.1 255.255.255.0','no shutdown']);
+  const R=(d,l)=>runCli(n,d,l); R(a,'ip set 192.168.1.10 255.255.255.0 192.168.1.1'); R(b,'ip set 192.168.1.11 255.255.255.0 192.168.1.1'); R(s,'ip set 198.51.100.10 255.255.255.0 198.51.100.1'); return n.toJSON(); }
 function vlanExample(){
   const n=new Net(); const sw=n.add('switch',0,2,'SW1'), r=n.add('router',0,-3,'R1');
   const p=[n.add('pc',-6,4,'PC1'),n.add('pc',-3,5,'PC2'),n.add('pc',3,5,'PC3'),n.add('pc',6,4,'PC4')];
@@ -315,5 +325,5 @@ function frame(){
 // init
 try{ const s=localStorage.getItem('sabaka'); net=s?Net.from(JSON.parse(s)):Net.from(example()); }catch(e){ net=Net.from(example()); }
 if(!net.devices.length) net=Net.from(example());
-window.__net=()=>net; window.__app={aclExample,ripExample,stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
+window.__net=()=>net; window.__app={natExample,aclExample,ripExample,stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
 syncScene(); renderInsp(); renderChal(); renderLog(); fit(); frame();
