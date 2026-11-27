@@ -67,12 +67,14 @@ function nodeFor(d){
   const g=model(d.type); g.userData.id=d.id; g.position.set(d.x,0,d.z); g.scale.setScalar(.01); g.userData.spawn=performance.now(); scene.add(g); nodes[d.id]=g;
   const l=document.createElement('div'); l.className='lbl'; const s=document.createElement('div'); s.className='lbl sub'; $('#labels').append(l,s); labels[d.id]=[l,s]; return g;
 }
+let stpInfo={roles:{}};
 function syncScene(){
+  try{ stpInfo=net.stp(); }catch(e){ stpInfo={roles:{}}; }
   for(const d of net.devices){ const g=nodeFor(d); g.position.x=d.x; g.position.z=d.z; }
   for(const id of Object.keys(nodes)) if(!net.dev(id)){ scene.remove(nodes[id]); labels[id].forEach(e=>e.remove()); delete nodes[id]; delete labels[id]; }
   for(const id of Object.keys(linkMeshes)) if(!net.links.find(l=>l.id===id)){ scene.remove(linkMeshes[id]); delete linkMeshes[id]; }
   for(const l of net.links){ let m=linkMeshes[l.id]; if(!m){ m=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,1,10),glow(0x4aa8ff,1.4)); m.userData.link=l.id; scene.add(m); linkMeshes[l.id]=m; }
-    const a=net.dev(l.a.dev),b=net.dev(l.b.dev); const A=new THREE.Vector3(a.x,.35,a.z),B=new THREE.Vector3(b.x,.35,b.z); m.position.copy(A).add(B).multiplyScalar(.5); m.scale.set(1,A.distanceTo(B),1); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.clone().sub(A).normalize()); m.material.emissive.setHex(selLink===l.id?0xff5d73:0x2f8fe8); }
+    const a=net.dev(l.a.dev),b=net.dev(l.b.dev); const A=new THREE.Vector3(a.x,.35,a.z),B=new THREE.Vector3(b.x,.35,b.z); m.position.copy(A).add(B).multiplyScalar(.5); m.scale.set(1,A.distanceTo(B),1); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.clone().sub(A).normalize()); const _s=stpInfo.roles; const blk=_s[l.a.dev+'|'+l.a.if]==='blocked'||_s[l.b.dev+'|'+l.b.if]==='blocked'; m.material.emissive.setHex(selLink===l.id?0xff5d73:(blk?0xffb020:0x2f8fe8)); m.scale.x=m.scale.z=blk?.55:1; }
   for(const d of net.devices){ const g=nodes[d.id]; g.userData.ring.material.emissiveIntensity=(selected===d.id||cableFrom===d.id)?4:1.1; g.userData.ring.material.color.setHex(cableFrom===d.id?0xffffff:COL[d.type]); g.userData.ring.material.emissive.setHex(cableFrom===d.id?0xffffff:COL[d.type]);
     const [l,s]=labels[d.id]; l.textContent=d.name; l.classList.toggle('sel',selected===d.id); const ip=net.primaryIp(d); s.textContent=d.type==='switch'?'':(ip||'no IP'); }
 }
@@ -171,6 +173,7 @@ function renderInsp(){
   if(!d&&selLink){ el.innerHTML=`<div class="card"><h5>كابل متحدد</h5><button class="btn2 danger" data-act="dellink">احذف الكابل</button></div>`; return; }
   if(!d){ el.innerHTML=`<div class="card"><h5>مرحباً في Sabaka 3D</h5><p class="mut">ابني الشبكة بنفسك: اسحب أجهزة من القايمة، وصلها بالكابل، وظبط الـ IPs. دوس مرتين على أي جهاز تفتح الـ CLI.</p><p class="mut">جرب زرار «مثال» فوق لشبكة جاهزة بـ router وVLAN وسيرفر.</p></div><div class="card"><h5>اختصارات</h5><p class="mut">اسحب بالزر الأيسر للدوران · الأيمن للتحريك · العجلة للزووم<br>C كابل · V تحديد · Del حذف</p></div>`; return; }
   const h=[`<div class="card"><h5>${esc(d.type.toUpperCase())}</h5><div class="row two"><span>الاسم</span><input class="f" data-k="name" value="${esc(d.name)}"></div><button class="btn2" data-act="term">افتح الـ CLI</button></div>`];
+  if(d.type==='switch'){ const s=net.stp(); const ro=d.ifaces.filter(i=>s.roles[d.id+'|'+i.name]).map(i=>{const r=s.roles[d.id+'|'+i.name]; return `<div class="row two"><span>${i.name}</span><span style="color:${r==='blocked'?'#ffb020':r==='root'?'#4ade80':'#7dd3fc'}">${r==='root'?'Root FWD':r==='blocked'?'Blocked (loop)':'Designated FWD'}</span></div>`;}).join(''); h.push(`<div class="card"><h5>STP</h5><div class="row two"><span>Root Bridge</span><b>${s.root?esc(s.root.name)+(s.root===d?' (هذا الجهاز)':''):'-'}</b></div><div class="row two"><span>Priority</span><input class="f" data-k="stpPrio" value="${d.stpPrio??32768}"></div>${ro}</div>`); }
   if(d.type==='pc'||d.type==='server'){ const i=d.ifaces[0];
     h.push(`<div class="card"><h5>الشبكة (${i.name})</h5><div class="row two"><span>IP</span><input class="f" data-if="${i.name}" data-k="ip" value="${esc(i.ip)}" placeholder="192.168.1.10"></div><div class="row two"><span>Mask</span><input class="f" data-if="${i.name}" data-k="mask" value="${esc(i.mask)}" placeholder="255.255.255.0"></div><div class="row two"><span>Gateway</span><input class="f" data-k="gateway" value="${esc(d.gateway)}"></div><div class="row two"><span>DNS</span><input class="f" data-k="dns" value="${esc(d.dns)}"></div><button class="btn2" data-act="dhcp">احصل على IP (DHCP)</button><div class="mut">MAC: ${i.mac}</div></div>`);
     if(d.type==='server'){ const p=d.dhcp; h.push(`<div class="card"><h5>DHCP Server</h5><div class="row dhcp"><span>شغال</span><select class="f" data-dhcp="on"><option value="0">لا</option><option value="1" ${p.on?'selected':''}>نعم</option></select></div><div class="row dhcp"><span>أول IP</span><input class="f" data-dhcp="start" value="${esc(p.start)}"></div><div class="row dhcp"><span>العدد</span><input class="f" data-dhcp="count" value="${p.count}"></div><div class="row dhcp"><span>Gateway</span><input class="f" data-dhcp="gw" value="${esc(p.gw)}"></div><div class="row dhcp"><span>DNS</span><input class="f" data-dhcp="dns" value="${esc(p.dns)}"></div></div>
@@ -190,6 +193,7 @@ $('#insp').addEventListener('change',e=>{ const t=e.target; const d=net.dev(sele
   if(t.dataset.k==='name'){ d.name=t.value||d.name; }
   else if(t.dataset.dhcp){ const k=t.dataset.dhcp; d.dhcp[k]=k==='on'?t.value==='1':k==='count'?+t.value||1:t.value.trim(); }
   else if(t.dataset.if){ const i=net.iface(d,t.dataset.if); const k=t.dataset.k; if(k==='vlan') i.vlan=+t.value||1; else i[k]=t.value.trim(); if(k==='mode') renderInsp(); d.dhcpClient=false; }
+  else if(t.dataset.k==='stpPrio'){ const p=parseInt(t.value,10); if(p>=0&&p<=61440&&p%4096===0) d.stpPrio=p; else toast('الـ priority لازم يكون من مضاعفات 4096 (4096, 8192, ... 61440)',true); }
   else if(t.dataset.k){ d[t.dataset.k]=t.value.trim(); }
   changed(); });
 $('#insp').addEventListener('click',e=>{ const t=e.target.closest('[data-act],[data-delrec],[data-delroute],[data-delsub]'); if(!t) return; e.preventDefault(); const d=net.dev(selected); if(!d&&t.dataset.act==='dellink'&&selLink){ net.removeLink(selLink); selLink=null; changed(); return; } if(!d) return;
@@ -233,6 +237,7 @@ const CH=[
 
  {t:'Router-on-a-stick',d:'اعمل VLAN 10 و20 على switch واحد، خلّي البورت ناحية الراوتر trunk، واعمل sub-interface لكل VLAN على الراوتر (ip sub). بعدين PC من VLAN 10 يعمل ping لـ PC في VLAN 20.',f:()=>net.devices.some(r=>r.type==='router'&&r.ifaces.some(i=>(i.subs||[]).length>=2))&&pairs().some(([a,b])=>{const r=quiet(a,b);return r&&r.ok&&r.hops.some(h=>h.type==='router')&&a.ifaces[0].link&&net.peer(a,a.ifaces[0]).dev===net.peer(b,b.ifaces[0]).dev;})},
 
+ {t:'STP: Root Bridge',d:'وصّل 3 switches في مثلث (لفّة). خلّي switch معين هو الـ Root بتقليل الـ priority (spanning-tree vlan 1 priority 4096) وشوف STP بيقفل لينك واحد (برتقالي) والـ ping لسه شغال.',f:()=>net.devices.some(d=>d.type==='switch'&&(d.stpPrio??32768)<32768&&net.stp().root===d)&&Object.values(net.stp().roles).includes('blocked')&&pairs().some(([x,y])=>quiet(x,y)?.ok)},
  {t:'CLI بأسلوب IOS',d:'من الـ CLI بتاع الراوتر: اكتب enable ثم configure terminal، افتح interface، ادي IP بـ ip address، وبعدين اعمل ping من PC لعنوان الراوتر ويرد.',f:()=>!!achieved['ios-ip']&&!!achieved['ping-ok']},
 ];
 let chDone=new Set();
@@ -249,6 +254,12 @@ $('#bClear').onclick=()=>{ if(!net.devices.length||confirm('تمسح كل حاج
 function loadNet(o){ chDone=new Set(); net=Net.from(o); setTimeout(fit,0); selected=null; selLink=null; for(const k in hist) delete hist[k]; $('#term').classList.add('hidden'); changed(); }
 $('#bVlan').onclick=()=>{ loadNet(vlanExample()); toast('مثال: VLAN + router-on-a-stick'); };
 $('#bExample').onclick=()=>{ loadNet(example()); toast('مثال: شبكتين + Router + DHCP/DNS'); };
+$('#bStp').onclick=()=>{ loadNet(stpExample()); toast('مثال: 3 switches في لفّة — STP بيقفل لينك'); };
+function stpExample(){
+  const n=new Net(); const s=[n.add('switch',-6,0,'SW1'),n.add('switch',6,0,'SW2'),n.add('switch',0,-5,'SW3')];
+  const p=[n.add('pc',-8,4,'PC1'),n.add('pc',8,4,'PC2')];
+  n.connect(s[0].id,s[1].id); n.connect(s[1].id,s[2].id); n.connect(s[2].id,s[0].id); n.connect(p[0].id,s[0].id); n.connect(p[1].id,s[1].id);
+  const R=(d,l)=>runCli(n,d,l); R(p[0],'ip set 10.0.0.1 255.255.255.0'); R(p[1],'ip set 10.0.0.2 255.255.255.0'); return n.toJSON(); }
 function vlanExample(){
   const n=new Net(); const sw=n.add('switch',0,2,'SW1'), r=n.add('router',0,-3,'R1');
   const p=[n.add('pc',-6,4,'PC1'),n.add('pc',-3,5,'PC2'),n.add('pc',3,5,'PC3'),n.add('pc',6,4,'PC4')];
@@ -286,5 +297,5 @@ function frame(){
 // init
 try{ const s=localStorage.getItem('sabaka'); net=s?Net.from(JSON.parse(s)):Net.from(example()); }catch(e){ net=Net.from(example()); }
 if(!net.devices.length) net=Net.from(example());
-window.__net=()=>net; window.__app={openTerm,runTerm,select,example,loadNet,vlanExample};
+window.__net=()=>net; window.__app={stpExample,openTerm,runTerm,select,example,loadNet,vlanExample};
 syncScene(); renderInsp(); renderChal(); renderLog(); fit(); frame();
