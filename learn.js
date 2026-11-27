@@ -205,6 +205,7 @@ const WID={calc,topo,chunk,osi,mac,arp,vlan,route,dv,acl,nat,stp,dora};
 function show(id){
   const L=LESSONS.find(x=>x.id===id)||LESSONS[0];history.replaceState(null,'','#'+L.id);
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===L.id));
+  { const on=document.querySelector('#nav a.on'), box=$('#nav'); if(on&&box&&box.scrollWidth>box.clientWidth+4){ box.scrollLeft=on.offsetLeft-box.clientWidth/2+on.offsetWidth/2; } }
   const art=$('#art');
   art.innerHTML=`<div class="hero"><h1>${L.title}</h1><p>${L.sub}</p></div><div class="video" id="vid"></div>`+L.sections.map((s,i)=>`<section class="s" id="sec${i}">${s.html}${s.widget?'<div data-w="'+s.widget+'"></div>':''}</section>`).join('')
    +`<section class="s"><h2>جرّب بنفسك في المحاكي</h2><p>${L.tryText}</p><a class="btn2" href="index.html?ex=${L.ex}">افتح المثال في المحاكي</a></section><section class="s quiz" id="quiz"></section>`;
