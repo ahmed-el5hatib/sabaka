@@ -7,7 +7,7 @@ An original open-source, browser-based network simulator with a 3D scene (three.
 ## Features
 - Devices: PC, switch, router, server. Save/load topologies (JSON). Self-graded challenges in Egyptian Arabic (14).
 - L2: MAC learning, VLANs (access/trunk, allowed lists), router-on-a-stick, STP (root election, blocked ports shown in 3D).
-- L3: ARP, static routes, RIP v2, single-area OSPF (cost based SPF), ACLs (standard/extended/named), NAT/PAT, DHCP, DNS, ping, traceroute.
+- L3: ARP, static routes, RIP v2, multi-area OSPF with ABRs and O IA routes (cost based SPF), DHCP relay (ip helper-address), switch SVI management IP, TCP handshake (tcp/telnet/listen), ACLs (standard/extended/named), NAT/PAT, DHCP, DNS, ping, traceroute.
 - IOS-style CLI for routers and switches: modes, `?`, Tab, history, abbreviations, `show` commands, `running-config`.
 - Mobile friendly: bottom nav, sheets, full-screen CLI, touch controls.
 
