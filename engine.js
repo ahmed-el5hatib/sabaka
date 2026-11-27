@@ -97,16 +97,27 @@ export class Net {
   natLog(d,inside,outside,proto,dst,kind){ if(this._q) return; const t=d.nat.trans=d.nat.trans||[]; const e=t.find(x=>x.inside===inside&&x.outside===outside&&x.dst===dst&&x.proto===proto); if(e){ e.hits++; return; } t.push({inside,outside,dst,proto,kind,hits:1}); if(t.length>30) t.shift(); }
   // OSPF (area واحدة): link-state — كل الراوترات في نفس الـ component بتعرف الـ topology، وSPF (Dijkstra) بيحسب الأقل cost
   ospfIfs(d){ const o=d.ospf; if(!o||!o.on) return []; return this.l3(d).filter(i=>i.ip&&i.mask&&i.up&&i.link&&(o.networks||[]).some(n=>((ip2n(i.ip)^ip2n(n.ip))>>>0&(~ip2n(n.wc)>>>0))===0)); }
+  ospfArea(d,i){ const n=((d.ospf&&d.ospf.networks)||[]).find(n=>((ip2n(i.ip)^ip2n(n.ip))>>>0&(~ip2n(n.wc)>>>0))===0); return n?(+n.area||0):0; }
   ospfTable(){
     const R=this.devices.filter(d=>d.type==='router'&&d.ospf&&d.ospf.on); const T={}; if(!R.length) return T;
     const cost=i=>(i.phys||i).ospfCost||1; const adj={}; R.forEach(d=>adj[d.id]=[]);
-    for(const A of R) for(const li of this.ospfIfs(A)){ if((A.ospf.passive||[]).includes((li.phys||li).name)) continue; for(const ep of this.l2reach(A,li.phys||li,li.vlan||null)){ const B=ep.dev; if(B===A||!adj[B.id]) continue; const bi=this.ospfIfs(B).find(x=>(x.phys||x)===ep.iface&&(!x.phys||x.vlan===ep.vlan)&&same(x.ip,li.ip,li.mask)&&!(B.ospf.passive||[]).includes((x.phys||x).name)); if(bi) adj[A.id].push({to:B,out:li,nh:bi.ip,c:cost(li)}); } }
-    const nets=d=>this.ospfIfs(d).map(i=>({net:n2ip(netOf(i.ip,i.mask)),mask:i.mask,c:cost(i)}));
-    for(const A of R){ const dist={[A.id]:0}, first={}, done=new Set(); T[A.id]={};
-      for(let k=0;k<R.length;k++){ let u=null; for(const d of R) if(!done.has(d.id)&&dist[d.id]!==undefined&&(u===null||dist[d.id]<dist[u.id])) u=d; if(!u) break; done.add(u.id);
-        for(const e of adj[u.id]){ const nd=dist[u.id]+e.c; if(dist[e.to.id]===undefined||nd<dist[e.to.id]){ dist[e.to.id]=nd; first[e.to.id]=u===A?e:first[u.id]; } } }
-      const own=new Set(nets(A).map(x=>x.net+'/'+x.mask));
-      for(const B of R){ if(B===A||dist[B.id]===undefined) continue; for(const n of nets(B)){ const key=n.net+'/'+n.mask; if(own.has(key)) continue; const m=dist[B.id]+n.c; const cur=T[A.id][key]; if(!cur||m<cur.metric){ const f=first[B.id]; T[A.id][key]={net:n.net,mask:n.mask,metric:m,out:f.out,nh:f.nh,outKey:f.out.name}; } } } }
+    for(const A of R) for(const li of this.ospfIfs(A)){ if((A.ospf.passive||[]).includes((li.phys||li).name)) continue; const ar=this.ospfArea(A,li); for(const ep of this.l2reach(A,li.phys||li,li.vlan||null)){ const B=ep.dev; if(B===A||!adj[B.id]) continue; const bi=this.ospfIfs(B).find(x=>(x.phys||x)===ep.iface&&(!x.phys||x.vlan===ep.vlan)&&same(x.ip,li.ip,li.mask)&&!(B.ospf.passive||[]).includes((x.phys||x).name)&&this.ospfArea(B,x)===ar); if(bi) adj[A.id].push({to:B,out:li,nh:bi.ip,c:cost(li),area:ar}); } }
+    const nets=(d,ar)=>this.ospfIfs(d).filter(i=>ar===undefined||this.ospfArea(d,i)===ar).map(i=>({net:n2ip(netOf(i.ip,i.mask)),mask:i.mask,c:cost(i),area:this.ospfArea(d,i)}));
+    const areasOf=d=>[...new Set(this.ospfIfs(d).map(i=>this.ospfArea(d,i)))];
+    const all=[...new Set(R.flatMap(areasOf))];
+    // SPF لكل area ولكل راوتر
+    const spf=(A,ar)=>{ const dist={[A.id]:0}, first={}, done=new Set(); for(let k=0;k<R.length;k++){ let u=null; for(const d of R) if(!done.has(d.id)&&dist[d.id]!==undefined&&(u===null||dist[d.id]<dist[u.id])) u=d; if(!u) break; done.add(u.id); for(const e of adj[u.id]){ if(e.area!==ar) continue; const nd=dist[u.id]+e.c; if(dist[e.to.id]===undefined||nd<dist[e.to.id]){ dist[e.to.id]=nd; first[e.to.id]=u===A?e:first[u.id]; } } } return {dist,first}; };
+    const S={}; for(const A of R){ S[A.id]={}; for(const ar of areasOf(A)) S[A.id][ar]=spf(A,ar); }
+    const ownKeys={}; for(const A of R){ T[A.id]={}; ownKeys[A.id]=new Set(nets(A).map(x=>x.net+'/'+x.mask)); }
+    // intra-area
+    for(const A of R) for(const ar of areasOf(A)){ const {dist,first}=S[A.id][ar]; for(const B of R){ if(B===A||dist[B.id]===undefined) continue; for(const n of nets(B,ar)){ const key=n.net+'/'+n.mask; if(ownKeys[A.id].has(key)) continue; const m=dist[B.id]+n.c; const cur=T[A.id][key]; if(!cur||m<cur.metric){ const f=first[B.id]; T[A.id][key]={net:n.net,mask:n.mask,metric:m,out:f.out,nh:f.nh,outKey:f.out.name,oa:ar,ia:false}; } } } }
+    // inter-area عن طريق الـ ABRs (لازم area 0)
+    const abrs=R.filter(d=>{ const a=areasOf(d); return a.length>1&&a.includes(0); });
+    for(let round=0;round<6&&abrs.length&&all.length>1;round++){ let ch=false;
+      for(const X of abrs){ const adv=[]; for(const n of nets(X)){ adv.push({key:n.net+'/'+n.mask,net:n.net,mask:n.mask,metric:n.c,oa:n.area}); } for(const [key,e] of Object.entries(T[X.id])) adv.push({key,net:e.net,mask:e.mask,metric:e.metric,oa:e.oa});
+        for(const ar of areasOf(X)){ for(const s of adv){ if(s.oa===ar) continue; if(!((s.oa!==0&&ar===0)||(s.oa===0&&ar!==0))) continue;
+          for(const A of R){ if(A===X||!S[A.id][ar]) continue; const {dist,first}=S[A.id][ar]; if(dist[X.id]===undefined) continue; if(ownKeys[A.id].has(s.key)) continue; const m=dist[X.id]+s.metric; const cur=T[A.id][s.key]; if(cur&&(!cur.ia||cur.metric<=m)) continue; const f=first[X.id]; T[A.id][s.key]={net:s.net,mask:s.mask,metric:m,out:f.out,nh:f.nh,outKey:f.out.name,oa:ar,ia:true,abr:X.name}; ch=true; } } } }
+      if(!ch) break; }
     return T; }
   // RIP v2 (distance-vector، hop count، max 15، split horizon) — بيتحسب من الـ topology الحالية
   ripNets(d){ const r=d.rip; if(!r||!r.on) return []; const cl=ip=>{ const f=+ip.split('.')[0]; return n2ip(netOf(ip,f<128?'255.0.0.0':f<192?'255.255.0.0':'255.255.255.0')); };
