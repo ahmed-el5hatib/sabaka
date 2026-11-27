@@ -81,13 +81,23 @@ export class Net {
     const hm=this.epIf(hit); d.arp[key]=hm.mac; hit.dev.arp[hm.name+'|'+(out.ip)]=out.mac; this.learn(reach,out,hit,hm); return hm.mac;
   }
   learn(reach,out,hit,hm){ for(const r of reach) for(const v of (r.via||[])) v.dev.mac[out.mac]={port:v.in,vlan:v.vlan}; for(const v of (hit.via||[])) v.dev.mac[hm.mac]={port:v.out,vlan:v.vlan}; }
+  // RIP v2 (distance-vector، hop count، max 15، split horizon) — بيتحسب من الـ topology الحالية
+  ripNets(d){ const r=d.rip; if(!r||!r.on) return []; const cl=ip=>{ const f=+ip.split('.')[0]; return n2ip(netOf(ip,f<128?'255.0.0.0':f<192?'255.255.0.0':'255.255.255.0')); };
+    return this.l3(d).filter(i=>i.ip&&i.mask&&i.up&&i.link&&(r.networks||[]).some(n=>n===cl(i.ip)||n===n2ip(netOf(i.ip,i.mask)))); }
+  ripTable(){
+    const R=this.devices.filter(d=>d.type==='router'&&d.rip&&d.rip.on); const T={}; if(!R.length) return T;
+    R.forEach(d=>{ T[d.id]={}; for(const i of this.ripNets(d)){ const net=n2ip(netOf(i.ip,i.mask)); T[d.id][net+'/'+i.mask]={net,mask:i.mask,metric:0,own:true,out:i,nh:null,outKey:i.name}; } });
+    const adj=[]; for(const A of R) for(const li of this.ripNets(A)){ const ph=li.phys||li; for(const ep of this.l2reach(A,ph,li.vlan||null)){ const B=ep.dev; if(B===A||!T[B.id]) continue; const bi=this.l3(B).find(x=>x.ip&&x.up&&x.link&&x.mask&&(x.phys||x)===ep.iface&&(!x.phys||x.vlan===ep.vlan)&&same(x.ip,li.ip,li.mask)&&this.ripNets(B).includes(x)); if(bi&&!(B.rip.passive||[]).includes(bi.phys?bi.phys.name:bi.name)) adj.push({A,li,B,bi}); } }
+    for(let k=0;k<16;k++){ let ch=false; for(const {A,li,B,bi} of adj){ for(const [key,e] of Object.entries(T[B.id])){ if(e.outKey===bi.name&&!e.own) continue; const m=e.metric+1; if(m>=16) continue; const cur=T[A.id][key]; if(cur&&(cur.own||cur.metric<=m)) continue; T[A.id][key]={net:e.net,mask:e.mask,metric:m,own:false,out:li,nh:bi.ip,outKey:li.name,from:B.name}; ch=true; } } if(!ch) break; }
+    return T; }
   route(d,dst){
     // يرجع {out,nh} أو null
     const cand=[];
     for(const i of this.l3(d)){ if(i.ip&&i.mask&&i.up&&i.link&&same(i.ip,dst,i.mask)) cand.push({len:maskLen(i.mask),out:i,nh:dst,kind:'C'}); }
     if(d.type==='router'||true){ for(const r of d.routes){ const o=this.ifaceTo(d,r.nh); if(o&&same(r.net,dst,r.mask)) cand.push({len:maskLen(r.mask),out:o,nh:r.nh,kind:'S'}); } }
+    if(d.type==='router'&&d.rip&&d.rip.on){ const t=this.ripTable()[d.id]||{}; for(const e of Object.values(t)){ if(!e.own&&same(e.net,dst,e.mask)) cand.push({len:maskLen(e.mask),out:e.out,nh:e.nh,kind:'R'}); } }
     if(d.type!=='router'&&d.gateway){ const o=this.ifaceTo(d,d.gateway); if(o) cand.push({len:-1,out:o,nh:d.gateway,kind:'G'}); }
-    cand.sort((a,b)=>b.len-a.len||(a.kind==='C'?-1:1)); return cand[0]||null;
+    const rk={C:0,S:1,R:2,G:3}; cand.sort((a,b)=>b.len-a.len||rk[a.kind]-rk[b.kind]); return cand[0]||null;
   }
   ifaceTo(d,nh){ return this.l3(d).find(i=>i.ip&&i.mask&&i.up&&i.link&&same(i.ip,nh,i.mask)); }
   // يرسل IP packet من src الى dstIp. proto: 'icmp'|'udp'. يرجع {ok,reason,hops:[{dev}],steps,at}
