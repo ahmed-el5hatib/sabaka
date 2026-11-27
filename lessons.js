@@ -1,5 +1,6 @@
+import {FOUND} from './lessons_a.js';
 const soon=(id,nav)=>({id,nav,soon:true,title:nav,sub:'',sections:[],quiz:[],ex:'example',tryText:''});
-export const LESSONS=[
+export const LESSONS=[...FOUND,
 {id:'subnetting',nav:'عناوين IP والـ Subnetting',ex:'example',
 title:'عناوين IP والـ Subnetting من الصفر',
 sub:'هتفهم إزاي الجهاز بيعرف مين معاه في نفس الشبكة ومين لأ، وتحسب أي Subnet في دقيقة بدون آلة حاسبة.',
